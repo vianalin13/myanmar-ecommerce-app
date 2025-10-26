@@ -1,0 +1,25 @@
+#firebase logs
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+firestore-debug.*.log
+
+#firebase cache
+.firebase/
+*.cache
+
+#dependencies
+node_modules/
+
+#environment files
+.env
+.env.local
+*.local
+
+#IDE
+.vscode/
+.idea/
+
+#OS
+.DS_Store
+Thumbs.db
