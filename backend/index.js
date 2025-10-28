@@ -13,6 +13,8 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
+const products = require("./products/products");
+
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
 // traffic spikes by instead downgrading performance. This limit is a
@@ -25,7 +27,7 @@ const admin = require("firebase-admin");
 // this will be the maximum concurrent request count.
 setGlobalOptions({ maxInstances: 10 });
 
-// Initialize Firebase Admin (only needs to be called once)
+// Initialize Firebase Admin (*only needs to be called once*)
 admin.initializeApp();
 
 // Create and deploy your first functions
@@ -52,6 +54,14 @@ exports.onUserCreated = onDocumentCreated(
     return null;
   }
 );
+
+//product management functions
+exports.createProduct = products.createProduct;
+exports.updateProduct = products.updateProduct;
+exports.deleteProduct = products.deleteProduct;
+exports.getSellerProducts = products.getSellerProducts;
+exports.getPublicProducts = products.getPublicProducts;
+
 
 //when a user signs up via phone auth, automatically create their firestore profile
 //note: onUserCreated trigger not available in v6.0.1
