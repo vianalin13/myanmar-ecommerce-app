@@ -17,6 +17,10 @@ exports.registerUser = onCall(async (req) => {
 
   const uid = auth.uid; //caller uid
   const phoneNumber = auth?.token?.phone_number ?? null;
+  
+  //extract role from client (buyer or seller), default to buyer
+  const requestedRole = req.data?.role;
+  const role = (requestedRole === "seller" || requestedRole === "buyer") ? requestedRole : "buyer";
 
   const firestore = admin.firestore(); 
   const userRef = firestore.collection("users").doc(uid); //get a reference to users/{uid}
@@ -27,7 +31,7 @@ exports.registerUser = onCall(async (req) => {
     await userRef.set({
       uid, 
       phoneNumber,
-      role: "buyer",
+      role, // use selected role
       verificationStatus: "unverified",
       displayName: "",
       language: "my",
