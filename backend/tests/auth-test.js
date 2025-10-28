@@ -40,10 +40,31 @@ async function testUpdateUserProfile(uid) {
   console.log("user profile updated:", uid);
 }
 
+async function testVerifySellerKYC(uid) {
+  const userRef = firestore.collection("users").doc(uid);
+
+  //simulate admin action, verify seller's KYC
+  await userRef.update({
+    verificationStatus: "verified",
+    kycData: { 
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: "approved"
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log("seller KYC verified:", uid);
+}
+
 async function runTests() {
   try {
-    const uid = await testRegisterUser();
-    await testUpdateUserProfile(uid);
+    //const uid = await testRegisterUser();
+    //await testUpdateUserProfile("TEST_UID_1761677483264");
+
+    //const sellerUid = await testRegisterUser();
+    await testVerifySellerKYC("TEST_UID_1761677592126");
+    
     console.log("all tests passed");
     console.log("check emulator UI -> firestore -> users");
   } catch (err) {
