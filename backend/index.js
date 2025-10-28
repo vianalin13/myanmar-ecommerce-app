@@ -12,6 +12,7 @@ const {onRequest} = require("firebase-functions/https");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const auth = require("./auth");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -56,3 +57,6 @@ exports.onUserCreated = onDocumentCreated(
 //when a user signs up via phone auth, automatically create their firestore profile
 //note: onUserCreated trigger not available in v6.0.1
 //for now, manually create user docs via emulator UI or use a separate function
+
+//auth callables
+exports.registerUser = auth.registerUser;
