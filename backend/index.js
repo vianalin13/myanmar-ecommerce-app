@@ -60,3 +60,6 @@ exports.onUserCreated = onDocumentCreated(
 
 //auth callables
 exports.registerUser = auth.registerUser;
+exports.updateUserProfile = auth.updateUserProfile;
+exports.verifySellerKYC = auth.verifySellerKYC;
+exports.createAdmin = auth.createAdmin;
