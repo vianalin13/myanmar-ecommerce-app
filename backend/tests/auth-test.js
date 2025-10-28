@@ -9,7 +9,7 @@ process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
 
 const firestore = admin.firestore();
 
-async function test() {
+async function testRegisterUser() {
   const testUid = "TEST_UID_" + Date.now();
   const userRef = firestore.collection("users").doc(testUid);
 
@@ -25,7 +25,31 @@ async function test() {
   });
 
   console.log("user doc created:", testUid);
-  console.log("check emulator UI -> firestore -> users/" + testUid);
+  return testUid;
 }
 
-test().then(() => process.exit(0)).catch(console.error);
+async function testUpdateUserProfile(uid) {
+  const userRef = firestore.collection("users").doc(uid);
+  
+  await userRef.update({
+    displayName: "michelle",
+    language: "en",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log("user profile updated:", uid);
+}
+
+async function runTests() {
+  try {
+    const uid = await testRegisterUser();
+    await testUpdateUserProfile(uid);
+    console.log("all tests passed");
+    console.log("check emulator UI -> firestore -> users");
+  } catch (err) {
+    console.error("test failed:", err.message);
+  }
+  process.exit(0);
+}
+
+runTests();
