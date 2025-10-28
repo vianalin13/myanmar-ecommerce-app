@@ -57,13 +57,28 @@ async function testVerifySellerKYC(uid) {
   console.log("seller KYC verified:", uid);
 }
 
+async function testCreateAdmin(uid) {
+  const userRef = firestore.collection("users").doc(uid);
+  
+  await userRef.update({
+    role: "admin",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log("user promoted to admin:", uid);
+}
+
 async function runTests() {
   try {
     //const uid = await testRegisterUser();
     //await testUpdateUserProfile("TEST_UID_1761677483264");
 
     //const sellerUid = await testRegisterUser();
-    await testVerifySellerKYC("TEST_UID_1761677592126");
+    //await testVerifySellerKYC("TEST_UID_1761677592126");
+
+    //const adminTargetUid = await testRegisterUser();
+    await testCreateAdmin("TEST_UID_1761678866541"
+);
     
     console.log("all tests passed");
     console.log("check emulator UI -> firestore -> users");
