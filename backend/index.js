@@ -13,8 +13,8 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const auth = require("./auth");
-
 const products = require("./products/products");
+const orders = require("./orders");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -73,3 +73,11 @@ exports.registerUser = auth.registerUser;
 exports.updateUserProfile = auth.updateUserProfile;
 exports.verifySellerKYC = auth.verifySellerKYC;
 exports.createAdmin = auth.createAdmin;
+
+//order & payment management functions
+exports.createOrder = orders.createOrder;
+exports.updateOrderStatus = orders.updateOrderStatus;
+exports.getUserOrders = orders.getUserOrders;
+exports.getOrderById = orders.getOrderById;
+exports.simulatePayment = orders.simulatePayment;
+exports.releaseEscrow = orders.releaseEscrow;

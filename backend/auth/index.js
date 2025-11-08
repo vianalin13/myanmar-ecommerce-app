@@ -4,4 +4,5 @@ module.exports = {
   ...require("./verifySellerKYC"),
   ...require("./createAdmin"),
   ...require("./verifySellerRole"),
+  ...require("./verifyUser"),
 };
