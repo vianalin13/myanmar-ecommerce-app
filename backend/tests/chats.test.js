@@ -80,18 +80,26 @@ async function getIdToken(uid) {
 }
 
 //helper: make authenticated request
-async function makeRequest(method, endpoint, token, data = null) {
+async function makeRequest(method, endpoint, token, data = null, queryParams = null) {
   try {
+    let url = `${BASE_URL}${endpoint}`;
+    
+    //add query parameters for GET requests
+    if (queryParams && Object.keys(queryParams).length > 0) {
+      const params = new URLSearchParams(queryParams);
+      url += `?${params.toString()}`;
+    }
+
     const config = {
       method,
-      url: `${BASE_URL}${endpoint}`,
+      url,
       headers: {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
       },
     };
 
-    if (data) {
+    if (data && method !== "GET") {
       config.data = data;
     }
 
@@ -563,6 +571,270 @@ async function testSendMessageInvalidProductId() {
   }
 }
 
+//test 16: get all messages for a chat
+async function testGetAllChatMessages() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST 16: Get All Chat Messages");
+  console.log("=".repeat(60));
+
+  if (!chatId) {
+    console.error("XXX no chatId available");
+    return false;
+  }
+
+  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+    chatId: chatId,
+  });
+
+  if (result.success) {
+    console.log("messages retrieved successfully!");
+    console.log(`message count: ${result.data.messageCount}`);
+    console.log(`chat ID: ${result.data.chatId}`);
+    
+    if (result.data.messages && result.data.messages.length > 0) {
+      console.log(`first message: ${result.data.messages[0].text}`);
+      console.log(`last message: ${result.data.messages[result.data.messages.length - 1].text}`);
+    }
+    
+    return true;
+  } else {
+    console.error("XXX failed to get messages");
+    console.error(`    status: ${result.status}`);
+    console.error(`    error: ${JSON.stringify(result.error, null, 2)}`);
+    return false;
+  }
+}
+
+//test 17: get messages filtered by productId
+async function testGetChatMessagesByProductId() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST 17: Get Chat Messages Filtered by Product ID");
+  console.log("=".repeat(60));
+
+  if (!chatId) {
+    console.error("XXX no chatId available");
+    return false;
+  }
+
+  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+    chatId: chatId,
+    productId: PRODUCT_1_ID,
+  });
+
+  if (result.success) {
+    console.log("messages filtered by productId retrieved successfully!");
+    console.log(`message count: ${result.data.messageCount}`);
+    console.log(`product ID filter: ${result.data.productId}`);
+    
+    //verify all messages have the correct productId
+    const allHaveProductId = result.data.messages.every(msg => msg.productId === PRODUCT_1_ID);
+    if (allHaveProductId || result.data.messageCount === 0) {
+      console.log("all messages have correct productId (or no messages)");
+      return true;
+    } else {
+      console.error("XXX some messages don't have the correct productId");
+      return false;
+    }
+  } else {
+    console.error("XXX failed to get messages");
+    console.error(`    status: ${result.status}`);
+    console.error(`    error: ${JSON.stringify(result.error, null, 2)}`);
+    return false;
+  }
+}
+
+//test 18: get messages with limit
+async function testGetChatMessagesWithLimit() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST 18: Get Chat Messages with Limit");
+  console.log("=".repeat(60));
+
+  if (!chatId) {
+    console.error("XXX no chatId available");
+    return false;
+  }
+
+  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+    chatId: chatId,
+    limit: "2",
+  });
+
+  if (result.success) {
+    console.log("messages with limit retrieved successfully!");
+    console.log(`message count: ${result.data.messageCount}`);
+    console.log(`limit requested: 2`);
+    
+    if (result.data.messageCount <= 2) {
+      console.log("limit applied correctly");
+      return true;
+    } else {
+      console.error("XXX limit not applied correctly");
+      console.error(`    expected: <= 2, got: ${result.data.messageCount}`);
+      return false;
+    }
+  } else {
+    console.error("XXX failed to get messages");
+    console.error(`    status: ${result.status}`);
+    console.error(`    error: ${JSON.stringify(result.error, null, 2)}`);
+    return false;
+  }
+}
+
+//test 19: error - missing chatId
+async function testGetChatMessagesMissingChatId() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST 19: Error - Missing Chat ID");
+  console.log("=".repeat(60));
+
+  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+    //no chatId
+  });
+
+  if (!result.success && result.status === 400) {
+    console.log("correctly rejected request without chatId");
+    console.log(`status: ${result.status}`);
+    console.log(`error: ${result.error.error}`);
+    return true;
+  } else {
+    console.error("XXX should have failed but didn't");
+    console.error(`    status: ${result.status}`);
+    return false;
+  }
+}
+
+//test 20: error - invalid chatId
+async function testGetChatMessagesInvalidChatId() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST 20: Error - Invalid Chat ID");
+  console.log("=".repeat(60));
+
+  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+    chatId: "invalid-chat-id-12345",
+  });
+
+  if (!result.success && result.status === 404) {
+    console.log("correctly rejected invalid chatId");
+    console.log(`status: ${result.status}`);
+    console.log(`error: ${result.error.error}`);
+    return true;
+  } else {
+    console.error("XXX should have failed but didn't");
+    console.error(`    status: ${result.status}`);
+    return false;
+  }
+}
+
+//test 21: display chat history
+async function testDisplayChatHistory() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST 21: Display Chat History");
+  console.log("=".repeat(60));
+
+  if (!chatId) {
+    console.error("XXX no chatId available");
+    return false;
+  }
+
+  //record timestamp before sending messages (to filter out old messages)
+  const testStartTime = Date.now() - 5000; //5 seconds before (to account for any clock drift)
+  
+  //send a few messages to create a conversation
+  console.log("creating conversation...");
+  
+  const conversation = [
+    { sender: "buyer", text: "Hello! I'm interested in your products.", productId: null },
+    { sender: "seller", text: "Hi! Thanks for your interest. Which product are you looking for?", productId: null },
+    { sender: "buyer", text: "I'm interested in Product 1. Is it still available?", productId: PRODUCT_1_ID },
+    { sender: "seller", text: "Yes, Product 1 is available! Here are the details:", productId: PRODUCT_1_ID },
+    { sender: "buyer", text: "Great! How much does it cost?", productId: null },
+    { sender: "seller", text: "It's 10,000 MMK. Would you like to purchase it?", productId: null },
+  ];
+  
+  for (const msg of conversation) {
+    const token = msg.sender === "buyer" ? buyerToken : sellerToken;
+    await makeRequest("POST", "/sendMessage", token, {
+      chatId: chatId,
+      text: msg.text,
+      productId: msg.productId,
+    });
+    //small delay between messages for readability
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  //wait a moment for messages to be saved
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  //get all messages
+  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+    chatId: chatId,
+  });
+
+  if (result.success && result.data.messages) {
+    //filter to only show messages from this test run (after testStartTime)
+    const recentMessages = result.data.messages.filter(msg => {
+      if (!msg.timestamp) return false;
+      return msg.timestamp >= testStartTime;
+    });
+    
+    console.log("\n" + "=".repeat(60));
+    console.log("CHAT HISTORY (Current Test Run)");
+    console.log("=".repeat(60));
+    console.log(`Chat ID: ${chatId}`);
+    console.log(`Messages in this test: ${recentMessages.length}`);
+    console.log(`Total messages in chat: ${result.data.messageCount}`);
+    console.log("=".repeat(60));
+    console.log("");
+
+    if (recentMessages.length === 0) {
+      console.log("No messages found from this test run.");
+      console.log("Showing last 6 messages from chat:");
+      console.log("");
+      //fallback: show last 6 messages
+      const lastMessages = result.data.messages.slice(-6);
+      lastMessages.forEach((message, index) => {
+        const sender = message.senderRole === "buyer" ? "Buyer" : "Seller";
+        const timestamp = message.timestamp 
+          ? new Date(message.timestamp).toLocaleString() 
+          : "No timestamp";
+        const product = message.productId ? ` [Product: ${message.productId}]` : "";
+        
+        console.log(`${index + 1}. ${sender} (${timestamp})${product}`);
+        if (message.text) {
+          console.log(`   "${message.text}"`);
+        } else if (message.imageURL) {
+          console.log(`   [Image: ${message.imageURL}]`);
+        }
+        console.log("");
+      });
+    } else {
+      //show messages from this test run
+      recentMessages.forEach((message, index) => {
+        const sender = message.senderRole === "buyer" ? "Buyer" : "Seller";
+        const timestamp = message.timestamp 
+          ? new Date(message.timestamp).toLocaleString() 
+          : "No timestamp";
+        const product = message.productId ? ` [Product: ${message.productId}]` : "";
+        
+        console.log(`${index + 1}. ${sender} (${timestamp})${product}`);
+        if (message.text) {
+          console.log(`   "${message.text}"`);
+        } else if (message.imageURL) {
+          console.log(`   [Image: ${message.imageURL}]`);
+        }
+        console.log("");
+      });
+    }
+
+    console.log("=".repeat(60));
+    return true;
+  } else {
+    console.error("XXX failed to get messages");
+    console.error(`    status: ${result.status}`);
+    console.error(`    error: ${JSON.stringify(result.error, null, 2)}`);
+    return false;
+  }
+}
+
 //main test runner
 async function runAllTests() {
   console.log("=".repeat(60));
@@ -604,6 +876,14 @@ async function runAllTests() {
   results.push({ test: "Error - Invalid Chat ID", passed: await testSendMessageInvalidChatId() });
   results.push({ test: "Error - Invalid Product ID", passed: await testSendMessageInvalidProductId() });
   results.push({ test: "Error - Unauthorized User", passed: await testSendMessageUnauthorizedUser() });
+  
+  //getChatMessages tests
+  results.push({ test: "Get All Chat Messages", passed: await testGetAllChatMessages() });
+  results.push({ test: "Get Chat Messages by Product ID", passed: await testGetChatMessagesByProductId() });
+  results.push({ test: "Get Chat Messages with Limit", passed: await testGetChatMessagesWithLimit() });
+  results.push({ test: "Error - Missing Chat ID (Get Messages)", passed: await testGetChatMessagesMissingChatId() });
+  results.push({ test: "Error - Invalid Chat ID (Get Messages)", passed: await testGetChatMessagesInvalidChatId() });
+  results.push({ test: "Display Chat History", passed: await testDisplayChatHistory() });
 
   //summary
   console.log("\n" + "=".repeat(60));
