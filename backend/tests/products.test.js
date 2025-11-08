@@ -2,13 +2,13 @@ const request = require("supertest");
 
 const BASE_URL = "http://localhost:5001/myanmar-ecommerce-prototype/us-central1";
 
-describe("🔥 Product API Tests", () => {
+describe("Product API Tests", () => {
   let productId; // store dynamically created productId
   const mockSeller = "mockSeller123";
   const otherSeller = "otherSeller456";
 
   // CREATE PRODUCT
-  test("✅ Create product (valid)", async () => {
+  test("Create product (valid)", async () => {
     const res = await request(BASE_URL)
       .post("/createProduct")
       .set("x-user-id", mockSeller)
@@ -26,7 +26,7 @@ describe("🔥 Product API Tests", () => {
     productId = res.body.productId;
   });
 
-  test("❌ Create product (invalid price)", async () => {
+  test("Create product (invalid price)", async () => {
     const res = await request(BASE_URL)
       .post("/createProduct")
       .set("x-user-id", mockSeller)
@@ -40,7 +40,7 @@ describe("🔥 Product API Tests", () => {
   });
 
   // UPDATE PRODUCT
-  test("✅ Update product (authorized seller)", async () => {
+  test("Update product (authorized seller)", async () => {
     const res = await request(BASE_URL)
       .patch("/updateProduct")
       .set("x-user-id", mockSeller)
@@ -55,7 +55,7 @@ describe("🔥 Product API Tests", () => {
     expect(res.body.updatedFields.name).toBe("Updated Jest Product");
   });
 
-  test("❌ Update product (unauthorized seller)", async () => {
+  test("Update product (unauthorized seller)", async () => {
     const res = await request(BASE_URL)
       .patch("/updateProduct")
       .set("x-user-id", otherSeller)
@@ -69,7 +69,7 @@ describe("🔥 Product API Tests", () => {
   });
 
   // GET SELLER PRODUCTS
-  test("✅ Get seller products", async () => {
+  test("Get seller products", async () => {
     const res = await request(BASE_URL)
       .get("/getSellerProducts")
       .set("x-user-id", mockSeller);
@@ -80,7 +80,7 @@ describe("🔥 Product API Tests", () => {
   });
 
   // GET PUBLIC PRODUCTS
-  test("✅ Get public products (active only)", async () => {
+  test("Get public products (active only)", async () => {
     const res = await request(BASE_URL).get("/getPublicProducts");
 
     expect(res.statusCode).toBe(200);
@@ -89,7 +89,7 @@ describe("🔥 Product API Tests", () => {
   });
 
   // DELETE PRODUCT
-  test("✅ Delete product (authorized seller)", async () => {
+  test("Delete product (authorized seller)", async () => {
     const res = await request(BASE_URL)
       .delete("/deleteProduct")
       .set("x-user-id", mockSeller)
@@ -99,7 +99,7 @@ describe("🔥 Product API Tests", () => {
     expect(res.body.success).toBe(true);
   });
 
-  test("❌ Delete product (unauthorized seller)", async () => {
+  test("Delete product (unauthorized seller)", async () => {
     const res = await request(BASE_URL)
       .delete("/deleteProduct")
       .set("x-user-id", otherSeller)
@@ -107,4 +107,15 @@ describe("🔥 Product API Tests", () => {
 
     expect(res.statusCode).toBe(403);
   });
+
+  afterAll(async () => {
+  if (productId) {
+    await request(BASE_URL)
+      .delete("/deleteProduct")
+      .set("x-user-id", mockSeller)
+      .send({ productId });
+    console.log(`Cleaned up test product: ${productId}`);
+  }
+  });
 });
+
