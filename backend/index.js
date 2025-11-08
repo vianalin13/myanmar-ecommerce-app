@@ -15,6 +15,7 @@ const admin = require("firebase-admin");
 const auth = require("./auth");
 
 const products = require("./products/products");
+const chats = require("./chats");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -73,3 +74,6 @@ exports.registerUser = auth.registerUser;
 exports.updateUserProfile = auth.updateUserProfile;
 exports.verifySellerKYC = auth.verifySellerKYC;
 exports.createAdmin = auth.createAdmin;
+
+//chat functions
+exports.startChat = chats.startChat;
