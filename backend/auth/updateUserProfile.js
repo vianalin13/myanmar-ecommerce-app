@@ -18,6 +18,12 @@ exports.updateUserProfile = onCall(async (req) => {
 
   updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
   
-  await admin.firestore().collection("users").doc(auth.uid).update(updates);
+  const userRef = admin.firestore().collection("users").doc(auth.uid);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    throw new Error("User profile not found");
+  }
+  
+  await userRef.update(updates);
   return { ok: true };
 });

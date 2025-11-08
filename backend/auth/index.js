@@ -3,4 +3,5 @@ module.exports = {
   ...require("./updateUserProfile"),
   ...require("./verifySellerKYC"),
   ...require("./createAdmin"),
+  ...require("./verifySellerRole"),
 };

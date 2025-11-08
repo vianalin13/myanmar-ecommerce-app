@@ -14,7 +14,13 @@ exports.createAdmin = onCall(async (req) => {
     throw new Error("invalid-argument");
   }
 
-  await admin.firestore().collection("users").doc(userId).update({
+  const userRef = admin.firestore().collection("users").doc(userId);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    throw new Error("User profile not found");
+  }
+
+  await userRef.update({
     role: "admin",
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });

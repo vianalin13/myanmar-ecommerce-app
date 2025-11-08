@@ -24,15 +24,7 @@ const { FieldValue } = require("firebase-admin/firestore");
 const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 
-//AUTH MOCK: Replace later with real auth middleware
-async function verifySellerRole(request) {
-  // TODO: Replace with Firebase Auth check
-  //return { userId: "mockSeller123", role: "seller" }; //just for testing
-  // Check for custom header "x-user-id"
-  const userId = request?.headers["x-user-id"] || "mockSeller123"; // default/easier for testing different users
-  return { userId, role: "seller" };
-}
-
+const { verifySellerRole } = require("../auth");
 
 //create product
 exports.createProduct = onRequest(async (request, response) => {
@@ -54,8 +46,8 @@ exports.createProduct = onRequest(async (request, response) => {
       return response.status(400).json({ error: "Invalid stock: must be a positive number" });
     }
 
-    //mock seller (replace Auth later)
-    const { userId } = await verifySellerRole(request);
+    //replaced Auth
+    const { uid: userId, user } = await verifySellerRole(request);
 
     // Construct product data
     const productData = {
@@ -104,8 +96,8 @@ exports.updateProduct = onRequest(async (request, response) => {
       return response.status(400).json({ error: "Missing productId" });
     }
 
-    // mock - real auth later
-    const { userId } = await verifySellerRole(request);
+    // auth 
+    const { uid: userId, user } = await verifySellerRole(request);
 
     const productRef = admin.firestore().collection("products").doc(productId);
     const productDoc = await productRef.get();
@@ -157,8 +149,8 @@ exports.deleteProduct = onRequest(async (request, response) => {
     const { productId } = request.body;
     if (!productId) return response.status(400).json({ error: "Missing productId" });
 
-    // verify seller, pass request so we can use custom headers if needed
-    const { userId } = await verifySellerRole(request);
+    // verify seller
+    const { uid: userId, user } = await verifySellerRole(request);
 
     const productRef = admin.firestore().collection("products").doc(productId);
     const productDoc = await productRef.get();
@@ -199,7 +191,7 @@ exports.getSellerProducts = onRequest(async (request, response) => {
     }
 
     // verify seller
-    const { userId } = await verifySellerRole(request);
+    const { uid: userId, user } = await verifySellerRole(request);
 
     const productsSnapshot = await admin
       .firestore()

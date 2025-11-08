@@ -19,7 +19,13 @@ exports.verifySellerKYC = onCall(async (req) => {
 
   //update users/{userid}
   //set verificationstatus and optional kycdata
-  await admin.firestore().collection("users").doc(userId).update({ 
+  const userRef = admin.firestore().collection("users").doc(userId);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    throw new Error("User profile not found");
+  }
+  
+  await userRef.update({ 
     verificationStatus,
     kycData: kycData || null, 
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
