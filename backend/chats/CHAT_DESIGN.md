@@ -108,7 +108,7 @@
 ## Implementation Steps
 
 1. ✅ **Update startChat** - One chat per buyer-seller (DONE)
-2. ⏳ **Update sendMessage** - Add optional productId to messages
+2. ✅ **Update sendMessage** - Add optional productId to messages
 3. ⏳ **Update getChatMessages** - Support filtering by productId (optional)
 4. ⏳ **Update order creation** - Link order to chat and product
 5. ⏳ **Frontend** - Show one chat per seller, filter by product if needed
