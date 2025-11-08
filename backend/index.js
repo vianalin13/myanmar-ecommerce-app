@@ -78,3 +78,4 @@ exports.createAdmin = auth.createAdmin;
 //chat functions
 exports.startChat = chats.startChat;
 exports.sendMessage = chats.sendMessage;
+exports.getChatMessages = chats.getChatMessages;
