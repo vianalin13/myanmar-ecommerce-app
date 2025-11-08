@@ -12,6 +12,7 @@ const {onRequest} = require("firebase-functions/https");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const auth = require("./auth");
 
 const products = require("./products/products");
 
@@ -66,3 +67,9 @@ exports.getPublicProducts = products.getPublicProducts;
 //when a user signs up via phone auth, automatically create their firestore profile
 //note: onUserCreated trigger not available in v6.0.1
 //for now, manually create user docs via emulator UI or use a separate function
+
+//auth callables
+exports.registerUser = auth.registerUser;
+exports.updateUserProfile = auth.updateUserProfile;
+exports.verifySellerKYC = auth.verifySellerKYC;
+exports.createAdmin = auth.createAdmin;
