@@ -68,6 +68,44 @@ exports.createOrder = onRequest(async (request, response) => {
       }
     }
 
+    // CHAT INTEGRATION: Validate chat if chatId is provided
+    // This ensures the chat exists and matches the buyer/seller before creating the order
+    if (chatId) {
+      const chatRef = admin.firestore().collection("chats").doc(chatId);
+      const chatDoc = await chatRef.get();
+
+      if (!chatDoc.exists) {
+        return response.status(404).json({ error: "Chat not found" });
+      }
+
+      const chatData = chatDoc.data();
+
+      // Verify chat belongs to the buyer creating the order
+      if (chatData.buyerId !== buyerId) {
+        return response.status(403).json({ error: "Unauthorized: chat does not belong to this buyer" });
+      }
+
+      // Verify chat belongs to the seller of the order
+      if (chatData.sellerId !== sellerId) {
+        return response.status(403).json({ error: "Unauthorized: chat does not belong to this seller" });
+      }
+
+      // Verify all products belong to the seller in the chat
+      // (This is already validated later in the transaction, but we check here for better error messages)
+      for (const item of products) {
+        const productRef = admin.firestore().collection("products").doc(item.productId);
+        const productDoc = await productRef.get();
+        if (productDoc.exists) {
+          const productData = productDoc.data();
+          if (productData.sellerId !== sellerId) {
+            return response.status(403).json({
+              error: `Product ${item.productId} does not belong to the seller in this chat`,
+            });
+          }
+        }
+      }
+    }
+
     // Determine order source (for future analytics)
     const orderSource = chatId ? "chat" : "direct";
 
@@ -161,6 +199,34 @@ exports.createOrder = onRequest(async (request, response) => {
           orderId,
         };
         transaction.set(orderRef, orderData);
+
+        // CHAT INTEGRATION: Update chat document with orderId (atomic with order creation)
+        // This links the order to the chat bidirectionally
+        if (chatId) {
+          const chatRef = firestore.collection("chats").doc(chatId);
+          const chatDoc = await transaction.get(chatRef);
+
+          // Verify chat still exists (defensive check within transaction)
+          if (!chatDoc.exists) {
+            throw new Error("Chat not found during transaction");
+          }
+
+          // Prepare chat update data
+          const chatUpdateData = {
+            orderId: orderId, // Update chat with latest order ID
+            updatedAt: FieldValue.serverTimestamp(),
+          };
+
+          // Update currentProductId only if order has a single product
+          // For multiple products, leave currentProductId unchanged (adjustable for future)
+          if (validatedProducts.length === 1) {
+            chatUpdateData.currentProductId = validatedProducts[0].productId;
+          }
+          // Note: For multiple products, we leave currentProductId unchanged
+          // This can be adjusted in the future if needed (e.g., set to first product, or null)
+
+          transaction.update(chatRef, chatUpdateData);
+        }
       });
     } catch (err) {
       transactionErrorMessage = err.message;
@@ -185,6 +251,9 @@ exports.createOrder = onRequest(async (request, response) => {
       if (transactionErrorMessage.includes("Insufficient stock")) {
         return response.status(400).json({ error: transactionErrorMessage });
       }
+      if (transactionErrorMessage.includes("Chat not found during transaction")) {
+        return response.status(404).json({ error: "Chat not found" });
+      }
 
       // Unknown transaction error (already logged above with full details)
       return response.status(500).json({
@@ -204,7 +273,11 @@ exports.createOrder = onRequest(async (request, response) => {
     });
 
     // Respond to client
-    logger.info(`Order created: ${orderId} by buyer ${buyerId} from seller ${sellerId}`);
+    if (chatId) {
+      logger.info(`Order created from chat: ${orderId} by buyer ${buyerId} from seller ${sellerId} (chatId: ${chatId})`);
+    } else {
+      logger.info(`Order created: ${orderId} by buyer ${buyerId} from seller ${sellerId}`);
+    }
     return response.json({
       success: true,
       message: "Order created successfully",
