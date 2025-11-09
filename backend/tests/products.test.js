@@ -1,3 +1,5 @@
+//Test file for product before integrating with real auth
+
 const request = require("supertest");
 
 const BASE_URL = "http://localhost:5001/myanmar-ecommerce-prototype/us-central1";
