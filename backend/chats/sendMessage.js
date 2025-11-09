@@ -61,13 +61,6 @@ exports.sendMessage = onRequest(async (request, response) => {
       });
     }
 
-    //verify chat is active
-    if (chatData.status !== "active") {
-      return response.status(400).json({
-        error: "chat is not active"
-      });
-    }
-
     //determine sender role
     const senderRole = userId === chatData.buyerId ? "buyer" : "seller";
 

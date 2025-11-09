@@ -62,7 +62,6 @@ exports.startChat = onRequest(async (request, response) => {
       .collection("chats")
       .where("buyerId", "==", buyerId)
       .where("sellerId", "==", finalSellerId)
-      .where("status", "==", "active")
       .limit(1)
       .get();
 
@@ -93,7 +92,6 @@ exports.startChat = onRequest(async (request, response) => {
         initialProductId: productId || null, //reference to product that started the chat
         currentProductId: productId || null, //current product being discussed (can change)
         orderId: null, //will be set when order is created
-        status: "active",
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         lastMessageAt: null,
