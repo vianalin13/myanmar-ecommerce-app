@@ -109,6 +109,13 @@
 
 1. ✅ **Update startChat** - One chat per buyer-seller (DONE)
 2. ✅ **Update sendMessage** - Add optional productId to messages
-3. ⏳ **Update getChatMessages** - Support filtering by productId (optional)
+3. ✅ **Update getChatMessages** - Support filtering by productId (optional)
 4. ⏳ **Update order creation** - Link order to chat and product
 5. ⏳ **Frontend** - Show one chat per seller, filter by product if needed
+
+## Enhance chat features
+⏳ Image messages: test image upload/sending
+⏳ Read receipts: mark messages as read, unread counts
+⏳ Typing indicators: real-time typing status
+⏳ Message deletion/editing: allow users to delete/edit messages
+⏳ Notifications: push notifications for new messages

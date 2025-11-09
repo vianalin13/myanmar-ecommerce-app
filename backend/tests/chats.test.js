@@ -1,11 +1,21 @@
 /**
- * tests all chat functionality including setup, startChat, and error handling
+ * tests all chat functionality and error handling
  * 
  * 1. start Firebase emulators: firebase emulators:start
- * 2. run setup: node scripts/setupTestData.js
+ * 2. run setup: node backend/scripts/setupTestData.js
  * 3. run tests: node backend/tests/chats.test.js
  */
 
+/**
+ * why axios (http client library)
+ * promise-based with async/wait
+ * clear error handling
+ * interceptors for auth/logging
+ * 
+ * tests call cloud functions endpoints
+ * axios sends http requests with auth tokens
+ * test verify response
+ */
 const axios = require('axios');
 const admin = require("firebase-admin");
 
@@ -21,25 +31,25 @@ if(!admin.apps.length) {
 
 //configuration
 const BASE_URL = "http://localhost:5001/myanmar-ecommerce-prototype/us-central1";
-const BUYER_UID = "test-buyer-123";
-const SELLER_UID = "test-seller-456";
+const BUYER_1_UID = "test-buyer-123";
+const SELLER_1_UID = "test-seller-456";
 const SELLER_2_UID = "test-seller-789";
 const PRODUCT_1_ID = "test-product-1";
 const PRODUCT_2_ID = "test-product-2";
 const PRODUCT_3_ID = "test-product-3";
 
 //test state
-let buyerToken = null;
-let sellerToken = null;
+let buyer1Token = null;
+let seller1Token = null;
 let seller2Token = null;
-let chatId = null;
+let chatId1 = null;
 let chatId2 = null;
 
 //helper: check if test data exists
 async function checkTestData() {
   try {
-    const buyer = await admin.auth().getUser(BUYER_UID);
-    const seller = await admin.auth().getUser(SELLER_UID);
+    const buyer = await admin.auth().getUser(BUYER_1_UID);
+    const seller = await admin.auth().getUser(SELLER_1_UID);
     const seller2 = await admin.auth().getUser(SELLER_2_UID);
     const product = await admin.firestore().collection("products").doc(PRODUCT_1_ID).get();
     const product3 = await admin.firestore().collection("products").doc(PRODUCT_3_ID).get();
@@ -135,7 +145,7 @@ async function testCheckData() {
     console.log("XXX test data not found!");
     console.log("");
     console.log("please run setup first:");
-    console.log("  node scripts/setupTestData.js");
+    console.log("  node backend/scripts/setupTestData.js");
     console.log("");
     return false;
   }
@@ -152,8 +162,8 @@ async function testSetup() {
   console.log("=".repeat(60));
 
   try {
-    buyerToken = await getIdToken(BUYER_UID);
-    sellerToken = await getIdToken(SELLER_UID);
+    buyer1Token = await getIdToken(BUYER_1_UID);
+    seller1Token = await getIdToken(SELLER_1_UID);
     seller2Token = await getIdToken(SELLER_2_UID);
     
     console.log("buyer token obtained");
@@ -174,7 +184,7 @@ async function testCreateNewChat() {
   console.log("TEST 2: Create New Chat (First Time)");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/startChat", buyerToken, {
+  const result = await makeRequest("POST", "/startChat", buyer1Token, {
     productId: PRODUCT_1_ID,
   });
 
@@ -184,7 +194,7 @@ async function testCreateNewChat() {
     console.log(`buyer ID: ${result.data.chat.buyerId}`);
     console.log(`seller ID: ${result.data.chat.sellerId}`);
     console.log(`product ID: ${result.data.chat.currentProductId}`);
-    chatId = result.data.chatId;
+    chatId1 = result.data.chatId;
     return true;
 
   } else {
@@ -201,18 +211,18 @@ async function testGetExistingChat() {
   console.log("TEST 3: Get Existing Chat (Second Time)");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/startChat", buyerToken, {
+  const result = await makeRequest("POST", "/startChat", buyer1Token, {
     productId: PRODUCT_1_ID,
   });
 
   if (result.success) {
-    if (result.data.chatId === chatId) {
+    if (result.data.chatId === chatId1) {
       console.log("returned existing chat (same chatId)");
       console.log(`chat ID: ${result.data.chatId}`);
       return true;
     } else {
       console.error("XXX got different chatId (should be same)");
-      console.error(`    expected: ${chatId}`);
+      console.error(`    expected: ${chatId1}`);
       console.error(`    got: ${result.data.chatId}`);
       return false;
     }
@@ -230,19 +240,19 @@ async function testDifferentProductSameSeller() {
   console.log("TEST 4: Different Product, Same Seller");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/startChat", buyerToken, {
+  const result = await makeRequest("POST", "/startChat", buyer1Token, {
     productId: PRODUCT_2_ID,
   });
 
   if (result.success) {
-    if (result.data.chatId === chatId) {
+    if (result.data.chatId === chatId1) {
       console.log("returned same chat (one chat per buyer-seller)");
       console.log(`chat ID: ${result.data.chatId}`);
       console.log(`current Product ID: ${result.data.chat.currentProductId}`);
       return true;
     } else {
       console.error("XXX got different chatId (should be same)");
-      console.error(`    expected: ${chatId}`);
+      console.error(`    expected: ${chatId1}`);
       console.error(`    got: ${result.data.chatId}`);
       return false;
     }
@@ -295,7 +305,7 @@ async function testInvalidProduct() {
   console.log("TEST 6: Error - Invalid Product");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/startChat", buyerToken, {
+  const result = await makeRequest("POST", "/startChat", buyer1Token, {
     productId: "invalid-product-id-12345",
   });
 
@@ -317,7 +327,7 @@ async function testSellerCannotChatWithSelf() {
   console.log("TEST 7: Error - Seller Cannot Chat with Themselves");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/startChat", sellerToken, {
+  const result = await makeRequest("POST", "/startChat", seller1Token, {
     productId: PRODUCT_1_ID,
   });
 
@@ -339,13 +349,13 @@ async function testSendTextMessageBuyer() {
   console.log("TEST 8: Send Text Message (Buyer)");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available (run startChat tests first)");
     return false;
   }
 
-  const result = await makeRequest("POST", "/sendMessage", buyerToken, {
-    chatId: chatId,
+  const result = await makeRequest("POST", "/sendMessage", buyer1Token, {
+    chatId: chatId1,
     text: "Hello! Is this product still available?",
   });
 
@@ -370,13 +380,13 @@ async function testSendTextMessageSeller() {
   console.log("TEST 9: Send Text Message (Seller)");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("POST", "/sendMessage", sellerToken, {
-    chatId: chatId,
+  const result = await makeRequest("POST", "/sendMessage", seller1Token, {
+    chatId: chatId1,
     text: "Yes, it's available! How many would you like?",
   });
 
@@ -400,13 +410,13 @@ async function testSendMessageWithProductIdSeller() {
   console.log("TEST 10: Send Message with Product ID (Seller)");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("POST", "/sendMessage", sellerToken, {
-    chatId: chatId,
+  const result = await makeRequest("POST", "/sendMessage", seller1Token, {
+    chatId: chatId1,
     text: "Here are the details for Product 1",
     productId: PRODUCT_1_ID,
   });
@@ -431,13 +441,13 @@ async function testSendMessageWithProductIdBuyer() {
   console.log("TEST 10b: Send Message with Product ID (Buyer)");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("POST", "/sendMessage", buyerToken, {
-    chatId: chatId,
+  const result = await makeRequest("POST", "/sendMessage", buyer1Token, {
+    chatId: chatId1,
     text: "I'm interested in Product 2, is it available?",
     productId: PRODUCT_2_ID,
   });
@@ -462,7 +472,7 @@ async function testSendMessageMissingChatId() {
   console.log("TEST 11: Error - Missing Chat ID");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/sendMessage", buyerToken, {
+  const result = await makeRequest("POST", "/sendMessage", buyer1Token, {
     text: "This should fail",
   });
 
@@ -484,13 +494,13 @@ async function testSendMessageMissingContent() {
   console.log("TEST 12: Error - Missing Text and Image URL");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("POST", "/sendMessage", buyerToken, {
-    chatId: chatId,
+  const result = await makeRequest("POST", "/sendMessage", buyer1Token, {
+    chatId: chatId1,
     //no text or imageURL
   });
 
@@ -512,7 +522,7 @@ async function testSendMessageInvalidChatId() {
   console.log("TEST 13: Error - Invalid Chat ID");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/sendMessage", buyerToken, {
+  const result = await makeRequest("POST", "/sendMessage", buyer1Token, {
     chatId: "invalid-chat-id-12345",
     text: "This should fail",
   });
@@ -556,13 +566,13 @@ async function testSendMessageInvalidProductId() {
   console.log("TEST 15: Error - Invalid Product ID");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("POST", "/sendMessage", sellerToken, {
-    chatId: chatId,
+  const result = await makeRequest("POST", "/sendMessage", seller1Token, {
+    chatId: chatId1,
     text: "Message with invalid product",
     productId: "invalid-product-id-12345",
   });
@@ -585,13 +595,13 @@ async function testGetAllChatMessages() {
   console.log("TEST 16: Get All Chat Messages");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
-    chatId: chatId,
+  const result = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
+    chatId: chatId1,
   });
 
   if (result.success) {
@@ -619,13 +629,13 @@ async function testGetChatMessagesByProductId() {
   console.log("TEST 17: Get Chat Messages Filtered by Product ID");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
-    chatId: chatId,
+  const result = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
+    chatId: chatId1,
     productId: PRODUCT_1_ID,
   });
 
@@ -657,13 +667,13 @@ async function testGetChatMessagesWithLimit() {
   console.log("TEST 18: Get Chat Messages with Limit");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
 
-  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
-    chatId: chatId,
+  const result = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
+    chatId: chatId1,
     limit: "2",
   });
 
@@ -694,7 +704,7 @@ async function testGetChatMessagesMissingChatId() {
   console.log("TEST 19: Error - Missing Chat ID");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+  const result = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
     //no chatId
   });
 
@@ -716,7 +726,7 @@ async function testGetChatMessagesInvalidChatId() {
   console.log("TEST 20: Error - Invalid Chat ID");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+  const result = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
     chatId: "invalid-chat-id-12345",
   });
 
@@ -738,7 +748,7 @@ async function testDisplayChatHistory() {
   console.log("TEST 21: Display Chat History");
   console.log("=".repeat(60));
 
-  if (!chatId) {
+  if (!chatId1) {
     console.error("XXX no chatId available");
     return false;
   }
@@ -759,9 +769,9 @@ async function testDisplayChatHistory() {
   ];
   
   for (const msg of conversation) {
-    const token = msg.sender === "buyer" ? buyerToken : sellerToken;
+    const token = msg.sender === "buyer" ? buyer1Token : seller1Token;
     await makeRequest("POST", "/sendMessage", token, {
-      chatId: chatId,
+      chatId: chatId1,
       text: msg.text,
       productId: msg.productId,
     });
@@ -773,8 +783,8 @@ async function testDisplayChatHistory() {
   await new Promise(resolve => setTimeout(resolve, 1000));
 
   //get all messages
-  const result = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
-    chatId: chatId,
+  const result = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
+    chatId: chatId1,
   });
 
   if (result.success && result.data.messages) {
@@ -787,7 +797,7 @@ async function testDisplayChatHistory() {
     console.log("\n" + "=".repeat(60));
     console.log("CHAT HISTORY (Current Test Run)");
     console.log("=".repeat(60));
-    console.log(`Chat ID: ${chatId}`);
+    console.log(`Chat ID: ${chatId1}`);
     console.log(`Messages in this test: ${recentMessages.length}`);
     console.log(`Total messages in chat: ${result.data.messageCount}`);
     console.log("=".repeat(60));
@@ -849,7 +859,7 @@ async function testCreateSecondChat() {
   console.log("TEST 22: Create Second Chat (Buyer with Seller 2)");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("POST", "/startChat", buyerToken, {
+  const result = await makeRequest("POST", "/startChat", buyer1Token, {
     productId: PRODUCT_3_ID,
   });
 
@@ -862,7 +872,7 @@ async function testCreateSecondChat() {
     //send some messages in this chat
     console.log("sending messages in second chat...");
     
-    await makeRequest("POST", "/sendMessage", buyerToken, {
+    await makeRequest("POST", "/sendMessage", buyer1Token, {
       chatId: chatId2,
       text: "Hi! I'm interested in Product 3.",
     });
@@ -872,7 +882,7 @@ async function testCreateSecondChat() {
       text: "Hello! Product 3 is available. What would you like to know?",
     });
     
-    await makeRequest("POST", "/sendMessage", buyerToken, {
+    await makeRequest("POST", "/sendMessage", buyer1Token, {
       chatId: chatId2,
       text: "What's the price?",
       productId: PRODUCT_3_ID,
@@ -903,7 +913,7 @@ async function testGetBuyerChats() {
   console.log("TEST 23: Get Buyer Chats");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("GET", "/getUserChats", buyerToken, null, {
+  const result = await makeRequest("GET", "/getUserChats", buyer1Token, null, {
     limit: "10",
   });
 
@@ -932,7 +942,7 @@ async function testGetSellerChats() {
   console.log("TEST 24: Get Seller Chats");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("GET", "/getUserChats", sellerToken, null, {
+  const result = await makeRequest("GET", "/getUserChats", seller1Token, null, {
     limit: "10",
   });
 
@@ -961,7 +971,7 @@ async function testGetUserChatsWithLimit() {
   console.log("TEST 25: Get User Chats with Limit");
   console.log("=".repeat(60));
 
-  const result = await makeRequest("GET", "/getUserChats", buyerToken, null, {
+  const result = await makeRequest("GET", "/getUserChats", buyer1Token, null, {
     limit: "1",
   });
 
@@ -993,7 +1003,7 @@ async function testDisplayUserChatList() {
   console.log("=".repeat(60));
 
   //get buyer chats
-  const chatsResult = await makeRequest("GET", "/getUserChats", buyerToken, null, {
+  const chatsResult = await makeRequest("GET", "/getUserChats", buyer1Token, null, {
     limit: "10",
   });
 
@@ -1024,7 +1034,7 @@ async function testDisplayUserChatList() {
         console.log("");
         
         //get messages for this chat
-        const messagesResult = await makeRequest("GET", "/getChatMessages", buyerToken, null, {
+        const messagesResult = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
           chatId: chat.chatId,
         });
         
@@ -1067,14 +1077,239 @@ async function testDisplayUserChatList() {
   }
 }
 
+//test 27: end-to-end chat flow
+async function testEndToEndChatFlow() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST 27: End-to-End Chat Flow");
+  console.log("=".repeat(60));
+  console.log("This test simulates a complete buyer journey through the chat system");
+  console.log("");
+
+  try {
+    //step 1: buyer starts chat with seller 1 (product 1)
+    console.log("STEP 1: Buyer starts chat with Seller 1 (Product 1)");
+    const chat1Result = await makeRequest("POST", "/startChat", buyer1Token, {
+      productId: PRODUCT_1_ID,
+    });
+    
+    if (!chat1Result.success) {
+      console.error("XXX failed to start chat 1");
+      return false;
+    }
+    const chat1Id = chat1Result.data.chatId;
+    console.log(`✅ Chat 1 created: ${chat1Id}`);
+    console.log("");
+
+    //step 2: buyer and seller 1 exchange messages
+    console.log("STEP 2: Buyer and Seller 1 exchange messages");
+    await makeRequest("POST", "/sendMessage", buyer1Token, {
+      chatId: chat1Id,
+      text: "Hello! Is Product 1 still available?",
+    });
+    
+    await makeRequest("POST", "/sendMessage", seller1Token, {
+      chatId: chat1Id,
+      text: "Yes, it's available! How many would you like?",
+    });
+    
+    await makeRequest("POST", "/sendMessage", buyer1Token, {
+      chatId: chat1Id,
+      text: "I want 2 pieces. What's the total price?",
+      productId: PRODUCT_1_ID,
+    });
+    
+    await makeRequest("POST", "/sendMessage", seller1Token, {
+      chatId: chat1Id,
+      text: "2 pieces will be 20,000 MMK. Would you like to proceed?",
+      productId: PRODUCT_1_ID,
+    });
+    console.log("✅ Messages exchanged in Chat 1");
+    console.log("");
+
+    //step 3: buyer starts chat with seller 2 (product 3)
+    console.log("STEP 3: Buyer starts chat with Seller 2 (Product 3)");
+    const chat2Result = await makeRequest("POST", "/startChat", buyer1Token, {
+      productId: PRODUCT_3_ID,
+    });
+    
+    if (!chat2Result.success) {
+      console.error("XXX failed to start chat 2");
+      return false;
+    }
+    const chat2Id = chat2Result.data.chatId;
+    console.log(`✅ Chat 2 created: ${chat2Id}`);
+    console.log("");
+
+    //step 4: buyer and seller 2 exchange messages
+    console.log("STEP 4: Buyer and Seller 2 exchange messages");
+    await makeRequest("POST", "/sendMessage", buyer1Token, {
+      chatId: chat2Id,
+      text: "Hi! I'm interested in Product 3.",
+    });
+    
+    await makeRequest("POST", "/sendMessage", seller2Token, {
+      chatId: chat2Id,
+      text: "Hello! Product 3 is available. What would you like to know?",
+    });
+    
+    await makeRequest("POST", "/sendMessage", buyer1Token, {
+      chatId: chat2Id,
+      text: "What colors are available?",
+      productId: PRODUCT_3_ID,
+    });
+    
+    await makeRequest("POST", "/sendMessage", seller2Token, {
+      chatId: chat2Id,
+      text: "We have red, blue, and green available.",
+      productId: PRODUCT_3_ID,
+    });
+    console.log("✅ Messages exchanged in Chat 2");
+    console.log("");
+
+    //wait for messages to be saved
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    //step 5: buyer views their chat list
+    console.log("STEP 5: Buyer views their chat list");
+    const chatsListResult = await makeRequest("GET", "/getUserChats", buyer1Token, null, {
+      limit: "10",
+    });
+    
+    if (!chatsListResult.success) {
+      console.error("XXX failed to get chat list");
+      return false;
+    }
+    
+    console.log(`✅ Buyer has ${chatsListResult.data.chatCount} chats`);
+    if (chatsListResult.data.chatCount < 2) {
+      console.error("XXX expected at least 2 chats");
+      return false;
+    }
+    console.log("");
+
+    //step 6: buyer opens chat 1 and views messages
+    console.log("STEP 6: Buyer opens Chat 1 and views all messages");
+    const chat1MessagesResult = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
+      chatId: chat1Id,
+    });
+    
+    if (!chat1MessagesResult.success) {
+      console.error("XXX failed to get Chat 1 messages");
+      return false;
+    }
+    
+    console.log(`✅ Retrieved ${chat1MessagesResult.data.messageCount} messages from Chat 1`);
+    if (chat1MessagesResult.data.messageCount < 4) {
+      console.error("XXX expected at least 4 messages in Chat 1");
+      return false;
+    }
+    console.log("");
+
+    //step 7: Buyer filters Chat 1 messages by Product 1
+    console.log("STEP 7: Buyer filters Chat 1 messages by Product 1");
+    const filteredMessagesResult = await makeRequest("GET", "/getChatMessages", buyer1Token, null, {
+      chatId: chat1Id,
+      productId: PRODUCT_1_ID,
+    });
+    
+    if (!filteredMessagesResult.success) {
+      console.error("XXX failed to get filtered messages");
+      return false;
+    }
+    
+    console.log(`✅ Retrieved ${filteredMessagesResult.data.messageCount} messages about Product 1`);
+    const allHaveProductId = filteredMessagesResult.data.messages.every(msg => 
+      msg.productId === PRODUCT_1_ID
+    );
+    if (!allHaveProductId && filteredMessagesResult.data.messageCount > 0) {
+      console.error("XXX not all filtered messages have Product 1 ID");
+      return false;
+    }
+    console.log("");
+
+    //step 8: buyer goes back to seller 1 chat and discusses product 2
+    console.log("STEP 8: Buyer discusses Product 2 in same chat (Seller 1)");
+    await makeRequest("POST", "/sendMessage", buyer1Token, {
+      chatId: chat1Id,
+      text: "Actually, I'm also interested in Product 2. Tell me about it.",
+      productId: PRODUCT_2_ID,
+    });
+    
+    await makeRequest("POST", "/sendMessage", seller1Token, {
+      chatId: chat1Id,
+      text: "Product 2 is 15,000 MMK. Great quality!",
+      productId: PRODUCT_2_ID,
+    });
+    console.log("✅ Discussed Product 2 in same chat");
+    console.log("");
+
+    //step 9: verify chat list shows updated last message
+    console.log("STEP 9: Verify chat list shows updated last message");
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    const updatedChatsResult = await makeRequest("GET", "/getUserChats", buyer1Token, null, {
+      limit: "10",
+    });
+    
+    const chat1InList = updatedChatsResult.data.chats.find(chat => chat.chatId === chat1Id);
+    if (!chat1InList) {
+      console.error("XXX Chat 1 not found in updated list");
+      return false;
+    }
+    
+    if (!chat1InList.lastMessage) {
+      console.error("XXX Chat 1 should have last message");
+      return false;
+    }
+    
+    console.log(`✅ Chat 1 last message: "${chat1InList.lastMessage}"`);
+    console.log("");
+
+    //step 10: display complete flow summary
+    console.log("=".repeat(60));
+    console.log("END-TO-END FLOW SUMMARY");
+    console.log("=".repeat(60));
+    console.log("");
+    console.log("✅ Chat 1 (Seller 1):");
+    console.log(`   - Chat ID: ${chat1Id}`);
+    console.log(`   - Products discussed: Product 1, Product 2`);
+    console.log(`   - Total messages: ${chat1MessagesResult.data.messageCount}`);
+    console.log("");
+    console.log("✅ Chat 2 (Seller 2):");
+    console.log(`   - Chat ID: ${chat2Id}`);
+    console.log(`   - Products discussed: Product 3`);
+    console.log("");
+    console.log("✅ Buyer chat list:");
+    console.log(`   - Total chats: ${chatsListResult.data.chatCount}`);
+    console.log(`   - All chats accessible`);
+    console.log("");
+    console.log("✅ Features verified:");
+    console.log("   - Multiple chats with different sellers");
+    console.log("   - Messages with product context");
+    console.log("   - Chat list retrieval");
+    console.log("   - Message filtering by product");
+    console.log("   - Multiple products in same chat");
+    console.log("   - Last message tracking");
+    console.log("");
+    console.log("=".repeat(60));
+
+    return true;
+
+  } catch (error) {
+    console.error("XXX End-to-end test failed:", error.message);
+    console.error(error);
+    return false;
+  }
+}
+
 //main test runner
 async function runAllTests() {
   console.log("=".repeat(60));
   console.log("CHAT SYSTEM TESTS");
   console.log("=".repeat(60));
   console.log(`Base URL: ${BASE_URL}`);
-  console.log(`Buyer UID: ${BUYER_UID}`);
-  console.log(`Seller UID: ${SELLER_UID}`);
+  console.log(`Buyer UID: ${BUYER_1_UID}`);
+  console.log(`Seller UID: ${SELLER_1_UID}`);
   console.log(`Seller 2 UID: ${SELLER_2_UID}`);
   console.log(`Product 1 ID: ${PRODUCT_1_ID}`);
   console.log(`Product 2 ID: ${PRODUCT_2_ID}`);
@@ -1087,7 +1322,7 @@ async function runAllTests() {
   const dataExists = await testCheckData();
   if (!dataExists) {
     console.log("\n XXX cannot run tests without test data!");
-    console.log("please run: node scripts/setupTestData.js");
+    console.log("please run: node backend/scripts/setupTestData.js");
     process.exit(1);
   }
 
@@ -1125,6 +1360,9 @@ async function runAllTests() {
   results.push({ test: "Get Seller Chats", passed: await testGetSellerChats() });
   results.push({ test: "Get User Chats with Limit", passed: await testGetUserChatsWithLimit() });
   results.push({ test: "Display User Chat List", passed: await testDisplayUserChatList() });
+  
+  //end-to-end test
+  results.push({ test: "End-to-End Chat Flow", passed: await testEndToEndChatFlow() });
 
   //summary
   console.log("\n" + "=".repeat(60));
@@ -1141,8 +1379,8 @@ async function runAllTests() {
   console.log(`Total: ${passedCount}/${totalCount} tests passed`);
   console.log("=".repeat(60));
 
-  if (chatId) {
-    console.log(`\nChat ID created: ${chatId}`);
+  if (chatId1) {
+    console.log(`\nChat ID created: ${chatId1}`);
   }
 
   process.exit(passedCount === totalCount ? 0 : 1);

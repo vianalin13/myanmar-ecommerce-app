@@ -33,71 +33,67 @@ async function setupTestData() {
   try {
     //step 1: create buyer user in auth
     console.log("Step 1: Creating buyer user in Auth...");
-    let buyerUser;
+    let buyer1;
     try {
-      buyerUser = await auth.createUser({
+      buyer1 = await auth.createUser({
         uid: "test-buyer-123",
-        email: "testbuyer@example.com",
-        password: "test123456",
-        displayName: "Test Buyer",
         phoneNumber: "+959123456789",
+        displayName: "Test Buyer",
       });
-      console.log("buyer user created:", buyerUser.uid);
+      console.log("buyer user created:", buyer1.uid);
     } catch (error) {
       if (error.code === "auth/uid-already-exists") {
         console.log("buyer user already exists, using existing user");
-        buyerUser = await auth.getUser("test-buyer-123");
+        buyer1 = await auth.getUser("test-buyer-123");
       } else {
         throw error;
       }
     }
 
-    //step 2: create seller user in auth
+    //step 2: create sellers user in auth
     console.log("Step 2: Creating seller user in Auth...");
-    let sellerUser;
+    let seller1;
     try {
-      sellerUser = await auth.createUser({
+      seller1 = await auth.createUser({
         uid: "test-seller-456",
-        email: "testseller@example.com",
-        password: "test123456",
-        displayName: "Test Seller",
         phoneNumber: "+959987654321",
+        displayName: "Test Seller",
       });
-      console.log("seller user created:", sellerUser.uid);
+      console.log("seller user created:", seller1.uid);
     } catch (error) {
       if (error.code === "auth/uid-already-exists") {
         console.log("seller user already exists, using existing user");
-        sellerUser = await auth.getUser("test-seller-456");
+        seller1 = await auth.getUser("test-seller-456");
       } else {
         throw error;
       }
     }
 
-    //step 2b: create second seller user in auth
-    console.log("Step 2b: Creating second seller user in Auth...");
-    let seller2User;
+    console.log("Creating second seller user in Auth...");
+    let seller2;
     try {
-      seller2User = await auth.createUser({
+      seller2 = await auth.createUser({
         uid: "test-seller-789",
-        email: "testseller2@example.com",
-        password: "test123456",
-        displayName: "Test Seller 2",
         phoneNumber: "+959987654322",
+        displayName: "Test Seller 2",
       });
-      console.log("seller 2 user created:", seller2User.uid);
+      console.log("seller 2 user created:", seller2.uid);
     } catch (error) {
       if (error.code === "auth/uid-already-exists") {
         console.log("seller 2 user already exists, using existing user");
-        seller2User = await auth.getUser("test-seller-789");
+        seller2 = await auth.getUser("test-seller-789");
       } else {
         throw error;
       }
     }
 
-    //step 3: create buyer profile in firestore
-    console.log("Step 3: Creating buyer profile in Firestore...");
-    await db.collection("users").doc(buyerUser.uid).set({
-      uid: buyerUser.uid,
+
+    //step 3: create buyer/seller profiles in firestore
+    console.log("Step 3: Creating profiles in Firestore...");
+
+    console.log("Creating buyer profile...");
+    await db.collection("users").doc(buyer1.uid).set({
+      uid: buyer1.uid,
       phoneNumber: "+959123456789",
       role: "buyer",
       verificationStatus: "verified",
@@ -108,10 +104,9 @@ async function setupTestData() {
     });
     console.log("buyer profile created");
 
-    //step 4: create seller profile in firestore
-    console.log("Step 4: Creating seller profile in Firestore...");
-    await db.collection("users").doc(sellerUser.uid).set({
-      uid: sellerUser.uid,
+    console.log("Creating seller profile...");
+    await db.collection("users").doc(seller1.uid).set({
+      uid: seller1.uid,
       phoneNumber: "+959987654321",
       role: "seller",
       verificationStatus: "verified",
@@ -122,10 +117,9 @@ async function setupTestData() {
     });
     console.log("seller profile created");
 
-    //step 4b: create second seller profile in firestore
-    console.log("Step 4b: Creating second seller profile in Firestore...");
-    await db.collection("users").doc(seller2User.uid).set({
-      uid: seller2User.uid,
+    console.log("Creating second seller profile...");
+    await db.collection("users").doc(seller2.uid).set({
+      uid: seller2.uid,
       phoneNumber: "+959987654322",
       role: "seller",
       verificationStatus: "verified",
@@ -136,15 +130,15 @@ async function setupTestData() {
     });
     console.log("seller 2 profile created");
 
-    //step 5: create test products
-    console.log("Step 5: Creating test products...");
+    //step 4: create test products
+    console.log("Step 4: Creating test products...");
     
-    //product 1
-    const product1Ref = db.collection("products").doc("test-product-1");
-    await product1Ref.set({
-      sellerId: sellerUser.uid,
+    //product 1 (seller 1)
+    const product1 = db.collection("products").doc("test-product-1");
+    await product1.set({
+      sellerId: seller1.uid,
       name: "Test Product 1",
-      description: "A test product for chat testing",
+      description: "A test product from seller 1",
       price: 10000,
       stock: 10,
       category: "Fashion",
@@ -153,14 +147,14 @@ async function setupTestData() {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    console.log("product 1 created:", product1Ref.id);
+    console.log("product 1 created:", product1.id);
 
-    //product 2 (same seller)
-    const product2Ref = db.collection("products").doc("test-product-2");
-    await product2Ref.set({
-      sellerId: sellerUser.uid,
+    //product 2 (seller 1)
+    const product2 = db.collection("products").doc("test-product-2");
+    await product2.set({
+      sellerId: seller1.uid,
       name: "Test Product 2",
-      description: "Another test product from same seller",
+      description: "Another test product from seller 1",
       price: 15000,
       stock: 5,
       category: "Fashion",
@@ -169,14 +163,14 @@ async function setupTestData() {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    console.log("product 2 created:", product2Ref.id);
+    console.log("product 2 created:", product2.id);
 
-    //product 3 (second seller)
-    const product3Ref = db.collection("products").doc("test-product-3");
-    await product3Ref.set({
-      sellerId: seller2User.uid,
+    //product 3 (seller 2)
+    const product3 = db.collection("products").doc("test-product-3");
+    await product3.set({
+      sellerId: seller2.uid,
       name: "Test Product 3",
-      description: "A test product from second seller",
+      description: "A test product from seller 2",
       price: 20000,
       stock: 8,
       category: "Electronics",
@@ -185,18 +179,7 @@ async function setupTestData() {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    console.log("product 3 created:", product3Ref.id);
-
-    //step 6: generate custom tokens and exchange for ID tokens
-    console.log("Step 6: Generating auth tokens...");
-    
-    //create custom token for buyer
-    const buyerCustomToken = await auth.createCustomToken(buyerUser.uid);
-    console.log("buyer custom token created");
-    
-    //create custom token for seller
-    const sellerCustomToken = await auth.createCustomToken(sellerUser.uid);
-    console.log("seller custom token created");
+    console.log("product 3 created:", product3.id);
 
     console.log("");
     console.log("=".repeat(60));
@@ -206,19 +189,16 @@ async function setupTestData() {
     console.log("Test Data Summary:");
     console.log("");
     console.log("Buyer:");
-    console.log(`  UID: ${buyerUser.uid}`);
-    console.log(`  Email: testbuyer@example.com`);
-    console.log(`  Password: test123456`);
+    console.log(`  UID: ${buyer1.uid}`);
+    console.log(`  Phone: +959123456789`);
     console.log("");
     console.log("Seller 1:");
-    console.log(`  UID: ${sellerUser.uid}`);
-    console.log(`  Email: testseller@example.com`);
-    console.log(`  Password: test123456`);
+    console.log(`  UID: ${seller1.uid}`);
+    console.log(`  Phone: +959987654321`);
     console.log("");
     console.log("Seller 2:");
-    console.log(`  UID: ${seller2User.uid}`);
-    console.log(`  Email: testseller2@example.com`);
-    console.log(`  Password: test123456`);
+    console.log(`  UID: ${seller2.uid}`);
+    console.log(`  Phone: +959987654322`);
     console.log("");
     console.log("Products:");
     console.log(`  Product 1 ID: test-product-1 (Seller 1)`);
@@ -227,19 +207,18 @@ async function setupTestData() {
     console.log("");
     console.log("=".repeat(60));
     console.log("");
-    console.log("Note: Custom tokens need to be exchanged for ID tokens");
-    console.log("   Use the getAuthToken.js script to get actual ID tokens");
+    console.log("Note: Authentication uses phone number + SMS OTP");
+    console.log("   For testing, tests generate ID tokens on-demand using getIdToken()");
+    console.log("   Run tests: node backend/tests/chats.test.js");
     console.log("");
     
     return {
-      buyerUid: buyerUser.uid,
-      sellerUid: sellerUser.uid,
-      seller2Uid: seller2User.uid,
-      product1Id: product1Ref.id,
-      product2Id: product2Ref.id,
-      product3Id: product3Ref.id,
-      buyerCustomToken,
-      sellerCustomToken,
+      buyerUid: buyer1.uid,
+      sellerUid: seller1.uid,
+      seller2Uid: seller2.uid,
+      product1Id: product1.id,
+      product2Id: product2.id,
+      product3Id: product3.id,
     };
 
   } catch (error) {
