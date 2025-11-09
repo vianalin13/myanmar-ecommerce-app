@@ -10,6 +10,7 @@ const { verifyUser } = require("../auth");
  */
 exports.getUserOrders = onRequest(async (request, response) => {
   try {
+    // Only accept GET requests
     if (request.method !== "GET") {
       return response.status(405).json({ error: "Use GET method" });
     }
@@ -22,12 +23,14 @@ exports.getUserOrders = onRequest(async (request, response) => {
     // Filter by role and handle status filtering
     let orders = [];
 
+    // Fetch orders as a BUYER
     if (role === "buyer") {
       // Fetch buyer orders
       const buyerQuery = admin.firestore().collection("orders")
-        .where("buyerId", "==", userId)
-        .orderBy("createdAt", "desc");
+        .where("buyerId", "==", userId) // Match current user as buyer
+        .orderBy("createdAt", "desc");  // Sort most recent first
       
+      // Map Firestore docs into plain JS objects with userRole label
       const snapshot = await buyerQuery.get();
       orders = snapshot.docs.map(doc => ({
         orderId: doc.id,
@@ -35,6 +38,7 @@ exports.getUserOrders = onRequest(async (request, response) => {
         userRole: "buyer",
       }));
 
+    // Fetch orders as a SELLER
     } else if (role === "seller") {
       // Verify seller role
       if (userData.role !== "seller") {
@@ -53,51 +57,39 @@ exports.getUserOrders = onRequest(async (request, response) => {
         userRole: "seller",
       }));
 
+      // Fetch ALL orders related to the user (either buyer or seller)
+      // Note: In this platform, users can only be either buyer OR seller, not both
     } else {
-      // Return all orders where user is either buyer or seller
-      // Firestore doesn't support OR queries directly, so we'll fetch both and merge
-      const buyerQuery = admin.firestore().collection("orders")
-        .where("buyerId", "==", userId)
-        .orderBy("createdAt", "desc");
-      
-      const buyerSnapshot = await buyerQuery.get();
-      buyerSnapshot.docs.forEach(doc => {
-        orders.push({
+      // Determine which orders to fetch based on user's role
+      if (userData.role === "buyer") {
+        // User is a buyer - fetch buyer orders
+        const buyerQuery = admin.firestore().collection("orders")
+          .where("buyerId", "==", userId)
+          .orderBy("createdAt", "desc");
+        
+        const buyerSnapshot = await buyerQuery.get();
+        orders = buyerSnapshot.docs.map(doc => ({
           orderId: doc.id,
           ...doc.data(),
           userRole: "buyer",
-        });
-      });
-
-      // Fetch seller orders if user is a seller
-      if (userData.role === "seller") {
+        }));
+      } else if (userData.role === "seller") {
+        // User is a seller - fetch seller orders
         const sellerQuery = admin.firestore().collection("orders")
           .where("sellerId", "==", userId)
           .orderBy("createdAt", "desc");
         
         const sellerSnapshot = await sellerQuery.get();
-        sellerSnapshot.docs.forEach(doc => {
-          const existingOrder = orders.find(o => o.orderId === doc.id);
-          if (existingOrder) {
-            existingOrder.userRole = "both";
-          } else {
-            orders.push({
-              orderId: doc.id,
-              ...doc.data(),
-              userRole: "seller",
-            });
-          }
-        });
+        orders = sellerSnapshot.docs.map(doc => ({
+          orderId: doc.id,
+          ...doc.data(),
+          userRole: "seller",
+        }));
       }
-
-      // Sort by createdAt (descending) - in case of duplicates from merging
-      orders.sort((a, b) => {
-        const aTime = a.createdAt?.toMillis() || 0;
-        const bTime = b.createdAt?.toMillis() || 0;
-        return bTime - aTime;
-      });
+      // If user has no role or invalid role, orders array remains empty
     }
 
+    // Optional Filter:
     // Apply status filter client-side (to avoid composite index requirements)
     if (orderStatus) {
       orders = orders.filter(order => order.status === orderStatus);

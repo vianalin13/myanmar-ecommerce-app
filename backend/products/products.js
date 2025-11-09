@@ -91,7 +91,7 @@ exports.updateProduct = onRequest(async (request, response) => {
       return response.status(405).json({ error: "Use PATCH or POST method" });
     }
 
-    const { productId, name, price, stock, category, description } = request.body;
+    const { productId, name, price, stock, category, description, status } = request.body;
     if (!productId) {
       return response.status(400).json({ error: "Missing productId" });
     }
@@ -119,6 +119,15 @@ exports.updateProduct = onRequest(async (request, response) => {
     if (stock !== undefined) updateData.stock = stock;
     if (category !== undefined) updateData.category = category;
     if (description !== undefined) updateData.description = description;
+    
+    // Validate status if provided (must be "active" or "inactive")
+    if (status !== undefined) {
+      if (status !== "active" && status !== "inactive") {
+        return response.status(400).json({ error: "Invalid status: must be 'active' or 'inactive'" });
+      }
+      updateData.status = status;
+    }
+    
     updateData.updatedAt = FieldValue.serverTimestamp();
 
     await productRef.update(updateData);
@@ -164,7 +173,10 @@ exports.deleteProduct = onRequest(async (request, response) => {
       return response.status(403).json({ error: "Unauthorized to delete this product" });
     }
 
-    // soft delete
+    // Soft delete product
+    // Note: Orders store product snapshots (name, price, image) at creation time,
+    // so deleting a product does not affect existing orders. Orders are independent
+    // and contain all necessary product information for fulfillment.
     await productRef.update({
       status: "inactive",
       updatedAt: FieldValue.serverTimestamp(),
