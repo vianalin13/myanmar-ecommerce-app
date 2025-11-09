@@ -14,6 +14,7 @@ const { firestore, BASE_URL } = require("./helpers/testSetup");
 const { createAuthUserAndGetToken } = require("./helpers/authHelpers");
 const { cleanupTestData } = require("./helpers/cleanupHelpers");
 const { createTestProduct } = require("./helpers/productHelpers");
+const { createTestChat } = require("./helpers/chatHelpers");
 
 // ============================================================================
 // CREATE ORDER TESTS
@@ -28,6 +29,7 @@ describe("Create Order API Tests", () => {
   let productId2;
   let productIds = [];
   let orderIds = [];
+  let chatIds = [];
 
   // Setup before each test (isolation)
   beforeEach(async () => {
@@ -64,9 +66,11 @@ describe("Create Order API Tests", () => {
       sellerUid,
       productIds,
       orderIds,
+      chatIds,
     });
     orderIds = [];
     productIds = [];
+    chatIds = [];
   }, 30000); // Increase timeout for cleanup
 
   // ========================================================================
@@ -156,8 +160,15 @@ describe("Create Order API Tests", () => {
     expect(product2Doc.data().stock).toBe(48); // 50 - 2
   }, 30000);
 
-  test("Create order (with chatId)", async () => {
-    const chatId = "chat123";
+  // ========================================================================
+  // CHAT INTEGRATION TESTS
+  // ========================================================================
+
+  test("Create order (with valid chatId - single product)", async () => {
+    // Create a test chat between buyer and seller
+    const chatId = await createTestChat(buyerUid, sellerUid, productId1);
+    chatIds.push(chatId);
+
     const res = await request(BASE_URL)
       .post("/createOrder")
       .set("Authorization", `Bearer ${buyerToken}`)
@@ -175,7 +186,7 @@ describe("Create Order API Tests", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
-
+    expect(res.body.orderId).toBeDefined();
     orderIds.push(res.body.orderId);
 
     // Verify order source is "chat" when chatId is provided
@@ -183,6 +194,206 @@ describe("Create Order API Tests", () => {
     const orderData = orderDoc.data();
     expect(orderData.orderSource).toBe("chat");
     expect(orderData.chatId).toBe(chatId);
+
+    // Verify chat document is updated with orderId
+    const updatedChatDoc = await firestore.collection("chats").doc(chatId).get();
+    const updatedChatData = updatedChatDoc.data();
+    expect(updatedChatData.orderId).toBe(res.body.orderId);
+
+    // Verify currentProductId is updated for single product order
+    expect(updatedChatData.currentProductId).toBe(productId1);
+  }, 30000);
+
+  test("Create order (with valid chatId - multiple products)", async () => {
+    // Create a test chat between buyer and seller (no initial product)
+    const chatId = await createTestChat(buyerUid, sellerUid);
+    chatIds.push(chatId);
+
+    // Set initial currentProductId to productId1
+    await firestore.collection("chats").doc(chatId).update({
+      currentProductId: productId1,
+    });
+
+    const res = await request(BASE_URL)
+      .post("/createOrder")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        sellerId: sellerUid,
+        products: [
+          { productId: productId1, quantity: 2 },
+          { productId: productId2, quantity: 1 },
+        ],
+        paymentMethod: "COD",
+        deliveryAddress: {
+          street: "456 Chat St",
+          city: "Yangon",
+          phone: "+959111222333",
+        },
+        chatId: chatId,
+      });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.orderId).toBeDefined();
+    orderIds.push(res.body.orderId);
+
+    // Verify order source is "chat"
+    const orderDoc = await firestore.collection("orders").doc(res.body.orderId).get();
+    const orderData = orderDoc.data();
+    expect(orderData.orderSource).toBe("chat");
+    expect(orderData.chatId).toBe(chatId);
+
+    // Verify chat document is updated with orderId
+    const updatedChatDoc2 = await firestore.collection("chats").doc(chatId).get();
+    const updatedChatData2 = updatedChatDoc2.data();
+    expect(updatedChatData2.orderId).toBe(res.body.orderId);
+
+    // Verify currentProductId is unchanged for multiple product order
+    // (should still be productId1, not updated)
+    expect(updatedChatData2.currentProductId).toBe(productId1);
+  }, 30000);
+
+  test("Create order (with invalid chatId - should fail)", async () => {
+    const invalidChatId = "non-existent-chat-id";
+
+    const res = await request(BASE_URL)
+      .post("/createOrder")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        sellerId: sellerUid,
+        products: [{ productId: productId1, quantity: 1 }],
+        paymentMethod: "COD",
+        deliveryAddress: {
+          street: "123 Test St",
+          city: "Yangon",
+          phone: "+959123456789",
+        },
+        chatId: invalidChatId,
+      });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toContain("Chat not found");
+  }, 30000);
+
+  test("Create order (with chatId - wrong buyer - should fail)", async () => {
+    // Create another buyer
+    const timestamp = Date.now();
+    const otherBuyerUid = `TEST_OTHER_BUYER_${timestamp}`;
+    const otherBuyerToken = await createAuthUserAndGetToken(otherBuyerUid, "buyer", "unverified");
+
+    // Create a chat between the original buyer and seller
+    const chatId = await createTestChat(buyerUid, sellerUid, productId1);
+    chatIds.push(chatId);
+
+    // Try to create order with other buyer (should fail)
+    const res = await request(BASE_URL)
+      .post("/createOrder")
+      .set("Authorization", `Bearer ${otherBuyerToken}`)
+      .send({
+        sellerId: sellerUid,
+        products: [{ productId: productId1, quantity: 1 }],
+        paymentMethod: "COD",
+        deliveryAddress: {
+          street: "123 Test St",
+          city: "Yangon",
+          phone: "+959123456789",
+        },
+        chatId: chatId,
+      });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toContain("chat does not belong to this buyer");
+
+    // Cleanup other buyer
+    await cleanupTestData({
+      buyerUid: otherBuyerUid,
+    });
+  }, 30000);
+
+  test("Create order (with chatId - wrong seller - should fail)", async () => {
+    // Create another seller
+    const timestamp = Date.now();
+    const otherSellerUid = `TEST_OTHER_SELLER_${timestamp}`;
+    const otherSellerToken = await createAuthUserAndGetToken(otherSellerUid, "seller", "verified");
+
+    // Create a chat between buyer and original seller
+    const chatId = await createTestChat(buyerUid, sellerUid, productId1);
+    chatIds.push(chatId);
+
+    // Create a product for the other seller
+    const otherProductId = await createTestProduct(otherSellerToken, {
+      name: "Other Seller Product",
+      price: 15000,
+      stock: 50,
+      category: "Test",
+    });
+
+    // Try to create order with other seller (should fail)
+    const res = await request(BASE_URL)
+      .post("/createOrder")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        sellerId: otherSellerUid,
+        products: [{ productId: otherProductId, quantity: 1 }],
+        paymentMethod: "COD",
+        deliveryAddress: {
+          street: "123 Test St",
+          city: "Yangon",
+          phone: "+959123456789",
+        },
+        chatId: chatId,
+      });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toContain("chat does not belong to this seller");
+
+    // Cleanup other seller and product
+    await cleanupTestData({
+      sellerUid: otherSellerUid,
+      productIds: [otherProductId],
+    });
+  }, 30000);
+
+  test("Create order (with chatId - product from different seller - should fail)", async () => {
+    // Create another seller and their product
+    const timestamp = Date.now();
+    const otherSellerUid = `TEST_OTHER_SELLER_${timestamp}`;
+    const otherSellerToken = await createAuthUserAndGetToken(otherSellerUid, "seller", "verified");
+    const otherProductId = await createTestProduct(otherSellerToken, {
+      name: "Other Seller Product",
+      price: 15000,
+      stock: 50,
+      category: "Test",
+    });
+
+    // Create a chat between buyer and original seller
+    const chatId = await createTestChat(buyerUid, sellerUid, productId1);
+    chatIds.push(chatId);
+
+    // Try to create order with product from other seller (should fail)
+    const res = await request(BASE_URL)
+      .post("/createOrder")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        sellerId: sellerUid, // Correct seller
+        products: [{ productId: otherProductId, quantity: 1 }], // But product from other seller
+        paymentMethod: "COD",
+        deliveryAddress: {
+          street: "123 Test St",
+          city: "Yangon",
+          phone: "+959123456789",
+        },
+        chatId: chatId,
+      });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toContain("does not belong to the seller in this chat");
+
+    // Cleanup other seller and product
+    await cleanupTestData({
+      sellerUid: otherSellerUid,
+      productIds: [otherProductId],
+    });
   }, 30000);
 
   test("Create order (WavePay payment method)", async () => {

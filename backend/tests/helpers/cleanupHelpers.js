@@ -76,6 +76,21 @@ async function cleanupProducts(productIds) {
 }
 
 /**
+ * Cleanup chats
+ * 
+ * @param {string[]} chatIds - Array of chat IDs
+ */
+async function cleanupChats(chatIds) {
+  if (!chatIds || chatIds.length === 0) {
+    return;
+  }
+
+  for (const chatId of chatIds) {
+    await deleteFirestoreDoc("chats", chatId);
+  }
+}
+
+/**
  * Cleanup users (Firestore and Auth)
  * 
  * @param {string[]} userIds - Array of user IDs
@@ -96,7 +111,7 @@ async function cleanupUsers(userIds) {
 
 /**
  * Cleanup all test data
- * Unified cleanup function that handles orders, logs, products, and users
+ * Unified cleanup function that handles orders, logs, products, chats, and users
  * 
  * @param {Object} options - Cleanup options
  * @param {string} options.buyerUid - Buyer user ID (optional)
@@ -104,6 +119,7 @@ async function cleanupUsers(userIds) {
  * @param {string} options.adminUid - Admin user ID (optional)
  * @param {string[]} options.productIds - Array of product IDs (optional)
  * @param {string[]} options.orderIds - Array of order IDs (optional)
+ * @param {string[]} options.chatIds - Array of chat IDs (optional)
  */
 async function cleanupTestData(options = {}) {
   const {
@@ -112,6 +128,7 @@ async function cleanupTestData(options = {}) {
     adminUid = null,
     productIds = [],
     orderIds = [],
+    chatIds = [],
   } = options;
 
   // Cleanup order logs first (before orders)
@@ -122,6 +139,11 @@ async function cleanupTestData(options = {}) {
   // Cleanup orders
   if (orderIds && orderIds.length > 0) {
     await cleanupOrders(orderIds);
+  }
+
+  // Cleanup chats
+  if (chatIds && chatIds.length > 0) {
+    await cleanupChats(chatIds);
   }
 
   // Cleanup products
@@ -141,6 +163,7 @@ module.exports = {
   cleanupOrderLogs,
   cleanupOrders,
   cleanupProducts,
+  cleanupChats,
   cleanupUsers,
   cleanupTestData,
 };
