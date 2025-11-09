@@ -4,7 +4,7 @@ module.exports = {
   ...require("./startChat"),
   ...require("./sendMessage"),
   ...require("./getChatMessages"),
-  // - getUserChats
+  ...require("./getUserChats"),
   // - linkChatToOrder
 };
 
