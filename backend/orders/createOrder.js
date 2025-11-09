@@ -70,39 +70,48 @@ exports.createOrder = onRequest(async (request, response) => {
 
     // CHAT INTEGRATION: Validate chat if chatId is provided
     // This ensures the chat exists and matches the buyer/seller before creating the order
+    let chatData = null;
     if (chatId) {
-      const chatRef = admin.firestore().collection("chats").doc(chatId);
-      const chatDoc = await chatRef.get();
+      try {
+        const chatRef = admin.firestore().collection("chats").doc(chatId);
+        const chatDoc = await chatRef.get();
 
-      if (!chatDoc.exists) {
-        return response.status(404).json({ error: "Chat not found" });
-      }
+        if (!chatDoc.exists) {
+          return response.status(404).json({ error: "Chat not found" });
+        }
 
-      const chatData = chatDoc.data();
+        chatData = chatDoc.data();
 
-      // Verify chat belongs to the buyer creating the order
-      if (chatData.buyerId !== buyerId) {
-        return response.status(403).json({ error: "Unauthorized: chat does not belong to this buyer" });
-      }
+        // Verify chat belongs to the buyer creating the order
+        if (chatData.buyerId !== buyerId) {
+          return response.status(403).json({ error: "Unauthorized: chat does not belong to this buyer" });
+        }
 
-      // Verify chat belongs to the seller of the order
-      if (chatData.sellerId !== sellerId) {
-        return response.status(403).json({ error: "Unauthorized: chat does not belong to this seller" });
-      }
+        // Verify chat belongs to the seller of the order
+        if (chatData.sellerId !== sellerId) {
+          return response.status(403).json({ error: "Unauthorized: chat does not belong to this seller" });
+        }
 
-      // Verify all products belong to the seller in the chat
-      // (This is already validated later in the transaction, but we check here for better error messages)
-      for (const item of products) {
-        const productRef = admin.firestore().collection("products").doc(item.productId);
-        const productDoc = await productRef.get();
-        if (productDoc.exists) {
-          const productData = productDoc.data();
-          if (productData.sellerId !== sellerId) {
-            return response.status(403).json({
-              error: `Product ${item.productId} does not belong to the seller in this chat`,
-            });
+        // Verify all products belong to the seller in the chat
+        // (This is already validated later in the transaction, but we check here for better error messages)
+        for (const item of products) {
+          const productRef = admin.firestore().collection("products").doc(item.productId);
+          const productDoc = await productRef.get();
+          if (productDoc.exists) {
+            const productData = productDoc.data();
+            if (productData.sellerId !== sellerId) {
+              return response.status(403).json({
+                error: `Product ${item.productId} does not belong to the seller in this chat`,
+              });
+            }
           }
         }
+      } catch (chatError) {
+        logger.error("Error validating chat:", chatError);
+        return response.status(500).json({
+          error: "Failed to validate chat",
+          details: chatError.message,
+        });
       }
     }
 
@@ -123,6 +132,20 @@ exports.createOrder = onRequest(async (request, response) => {
 
     try {
       await firestore.runTransaction(async (transaction) => {
+        // CHAT INTEGRATION: Read chat document first (if chatId provided)
+        // Firestore transactions require all reads before all writes
+        let chatDoc = null;
+        let chatRef = null;
+        if (chatId) {
+          chatRef = firestore.collection("chats").doc(chatId);
+          chatDoc = await transaction.get(chatRef);
+          
+          // Verify chat still exists (defensive check within transaction)
+          if (!chatDoc.exists) {
+            throw new Error("Chat not found during transaction");
+          }
+        }
+
         // Step 1: Read and validate products
         const productRefs = products.map(item => 
           firestore.collection("products").doc(item.productId)
@@ -202,15 +225,8 @@ exports.createOrder = onRequest(async (request, response) => {
 
         // CHAT INTEGRATION: Update chat document with orderId (atomic with order creation)
         // This links the order to the chat bidirectionally
-        if (chatId) {
-          const chatRef = firestore.collection("chats").doc(chatId);
-          const chatDoc = await transaction.get(chatRef);
-
-          // Verify chat still exists (defensive check within transaction)
-          if (!chatDoc.exists) {
-            throw new Error("Chat not found during transaction");
-          }
-
+        // Note: chatDoc was already read at the beginning of the transaction (all reads before writes)
+        if (chatId && chatRef && chatDoc) {
           // Prepare chat update data
           const chatUpdateData = {
             orderId: orderId, // Update chat with latest order ID
@@ -256,9 +272,19 @@ exports.createOrder = onRequest(async (request, response) => {
       }
 
       // Unknown transaction error (already logged above with full details)
+      logger.error("Unknown transaction error:", transactionErrorMessage);
       return response.status(500).json({
         error: "Transaction failed",
         details: transactionErrorMessage,
+      });
+    }
+
+    // If we get here, transaction succeeded but orderId is not set (shouldn't happen)
+    if (!orderId) {
+      logger.error("Transaction succeeded but orderId is not set");
+      return response.status(500).json({
+        error: "Failed to create order",
+        details: "Transaction completed but orderId was not generated",
       });
     }
   
