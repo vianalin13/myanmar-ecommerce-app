@@ -6,10 +6,27 @@ const logger = require("firebase-functions/logger");
 const { verifyUser } = require("../auth"); // Auth function verifying Firebase ID token
 const { logOrderEvent } = require("./utils"); // Utility to log order events
 
-// CREATE ORDER
-// This endpoint lets a buyer create an order (checkout or chat).
-// It validates stock, seller, and payment method, then records
-// the transaction as an immutable Firestore document.
+/**
+ * CREATE ORDER
+ * Allows a buyer to create an order (directly or via chat).
+ * 
+ * Pre-Transaction Validation:
+ * - Request validation (method, fields, payment method)
+ * - Seller verification (exists, is seller)
+ * - Product structure validation
+ * 
+ * Transaction (Atomic):
+ * - Validates chat (if chatId provided)
+ * - Validates products (stock, seller, status)
+ * - Reduces stock
+ * - Creates order document
+ * - Updates chat document (if chatId provided)
+ * 
+ * Post-Transaction:
+ * - Logs order creation event
+ * - Returns order details to client
+ */
+
 exports.createOrder = onRequest(async (request, response) => {
     
   try {
@@ -18,8 +35,8 @@ exports.createOrder = onRequest(async (request, response) => {
       return response.status(405).json({ error: "Use POST method" });
     }
 
-    // Verify the buyer’s authentication (using Firebase ID token)
-    const { uid: buyerId, user: buyerData } = await verifyUser(request);
+    // Verify the buyer's authentication (using Firebase ID token)
+    const { uid: buyerId } = await verifyUser(request);
 
     // Extract order data from request body
     const {
@@ -27,24 +44,22 @@ exports.createOrder = onRequest(async (request, response) => {
       products, // Array of { productId, quantity }
       paymentMethod,
       deliveryAddress,
-      chatId, // Optional: link to chat conversation
+      chatId, // link to chat conversation
     } = request.body;
 
     // Validate required fields
     if (!sellerId || !products || !Array.isArray(products) || products.length === 0) {
       return response.status(400).json({ error: "Missing required fields: sellerId and products" });
     }
-
     if (!paymentMethod) {
       return response.status(400).json({ error: "Missing payment method" });
     }
-
     if (!deliveryAddress || !deliveryAddress.street || !deliveryAddress.city || !deliveryAddress.phone) {
       return response.status(400).json({ error: "Missing or invalid delivery address" });
     }
 
     // Validate payment method
-    const validPaymentMethods = ["COD", "KBZPay", "WavePay", "other"];
+    const validPaymentMethods = ["COD", "KBZPay", "WavePay"];
     if (!validPaymentMethods.includes(paymentMethod)) {
       return response.status(400).json({ error: "Invalid payment method" });
     }
@@ -55,7 +70,6 @@ exports.createOrder = onRequest(async (request, response) => {
     if (!sellerDoc.exists) {
       return response.status(404).json({ error: "Seller not found" });
     }
-
     const sellerData = sellerDoc.data();
     if (sellerData.role !== "seller") {
       return response.status(400).json({ error: "User is not a seller" });
@@ -68,71 +82,20 @@ exports.createOrder = onRequest(async (request, response) => {
       }
     }
 
-    // CHAT INTEGRATION: Validate chat if chatId is provided
-    // This ensures the chat exists and matches the buyer/seller before creating the order
-    let chatData = null;
-    if (chatId) {
-      try {
-        const chatRef = admin.firestore().collection("chats").doc(chatId);
-        const chatDoc = await chatRef.get();
-
-        if (!chatDoc.exists) {
-          return response.status(404).json({ error: "Chat not found" });
-        }
-
-        chatData = chatDoc.data();
-
-        // Verify chat belongs to the buyer creating the order
-        if (chatData.buyerId !== buyerId) {
-          return response.status(403).json({ error: "Unauthorized: chat does not belong to this buyer" });
-        }
-
-        // Verify chat belongs to the seller of the order
-        if (chatData.sellerId !== sellerId) {
-          return response.status(403).json({ error: "Unauthorized: chat does not belong to this seller" });
-        }
-
-        // Verify all products belong to the seller in the chat
-        // (This is already validated later in the transaction, but we check here for better error messages)
-        for (const item of products) {
-          const productRef = admin.firestore().collection("products").doc(item.productId);
-          const productDoc = await productRef.get();
-          if (productDoc.exists) {
-            const productData = productDoc.data();
-            if (productData.sellerId !== sellerId) {
-              return response.status(403).json({
-                error: `Product ${item.productId} does not belong to the seller in this chat`,
-              });
-            }
-          }
-        }
-      } catch (chatError) {
-        logger.error("Error validating chat:", chatError);
-        return response.status(500).json({
-          error: "Failed to validate chat",
-          details: chatError.message,
-        });
-      }
-    }
-
     // Determine order source (for future analytics)
     const orderSource = chatId ? "chat" : "direct";
 
-    // Use Firestore transaction to atomically:
-    // 1. Read products and validate stock
-    // 2. Create order
-    // 3. Reduce stock
-    // This prevents race conditions where two orders could pass stock validation simultaneously
+    // Execute atomic transaction to prevent race conditions
+    // All operations (chat validation, product validation, stock reduction, order creation, chat update)
+    // happen atomically - either all succeed or all fail
     const firestore = admin.firestore();
     let orderId;
     let totalAmount = 0;
     let validatedProducts = [];
 
-    let transactionErrorMessage = null; // placeholder to capture any transaction errors
-
     try {
       await firestore.runTransaction(async (transaction) => {
-        // CHAT INTEGRATION: Read chat document first (if chatId provided)
+        // CHAT INTEGRATION: Validate chat if chatId is provided (atomic validation)
         // Firestore transactions require all reads before all writes
         let chatDoc = null;
         let chatRef = null;
@@ -140,13 +103,22 @@ exports.createOrder = onRequest(async (request, response) => {
           chatRef = firestore.collection("chats").doc(chatId);
           chatDoc = await transaction.get(chatRef);
           
-          // Verify chat still exists (defensive check within transaction)
+          // Verify chat exists
           if (!chatDoc.exists) {
-            throw new Error("Chat not found during transaction");
+            throw new Error("Chat not found");
+          }
+          
+          // Verify chat matches buyer and seller (atomic validation)
+          const chatData = chatDoc.data();
+          if (chatData.buyerId !== buyerId) {
+            throw new Error("Chat does not belong to this buyer");
+          }
+          if (chatData.sellerId !== sellerId) {
+            throw new Error("Chat does not belong to this seller");
           }
         }
 
-        // Step 1: Read and validate products
+        // Read and validate products
         const productRefs = products.map(item => 
           firestore.collection("products").doc(item.productId)
         );
@@ -166,6 +138,7 @@ exports.createOrder = onRequest(async (request, response) => {
           }
           const productData = productDoc.data();
 
+          // Validate product belongs to seller (atomic validation)
           if (productData.sellerId !== sellerId) {
             throw new Error(`Product ${item.productId} does not belong to seller`);
           }
@@ -225,16 +198,13 @@ exports.createOrder = onRequest(async (request, response) => {
 
         // CHAT INTEGRATION: Update chat document with orderId (atomic with order creation)
         // This links the order to the chat bidirectionally
-        // Note: chatDoc was already read at the beginning of the transaction (all reads before writes)
         if (chatId && chatRef && chatDoc) {
-          // Prepare chat update data
           const chatUpdateData = {
-            orderId: orderId, // Update chat with latest order ID
+            orderId: orderId,
             updatedAt: FieldValue.serverTimestamp(),
           };
 
           // Update currentProductId only if order has a single product
-          // For multiple products, leave currentProductId unchanged (adjustable for future)
           if (validatedProducts.length === 1) {
             chatUpdateData.currentProductId = validatedProducts[0].productId;
           }
@@ -245,46 +215,28 @@ exports.createOrder = onRequest(async (request, response) => {
         }
       });
     } catch (err) {
-      transactionErrorMessage = err.message;
+      // Handle transaction errors with appropriate status codes
       logger.error("Transaction error:", {
         message: err.message,
         stack: err.stack,
         code: err.code,
       });
-    }
 
-    // If transaction failed, handle all known error messages here
-    if (transactionErrorMessage) {
-      if (transactionErrorMessage.includes("not found")) {
-        return response.status(404).json({ error: transactionErrorMessage });
+      // Map error messages to appropriate HTTP status codes
+      if (err.message.includes("not found")) {
+        return response.status(404).json({ error: err.message });
       }
-      if (transactionErrorMessage.includes("does not belong")) {
-        return response.status(403).json({ error: transactionErrorMessage });
+      if (err.message.includes("does not belong")) {
+        return response.status(403).json({ error: err.message });
       }
-      if (transactionErrorMessage.includes("not available")) {
-        return response.status(400).json({ error: transactionErrorMessage });
-      }
-      if (transactionErrorMessage.includes("Insufficient stock")) {
-        return response.status(400).json({ error: transactionErrorMessage });
-      }
-      if (transactionErrorMessage.includes("Chat not found during transaction")) {
-        return response.status(404).json({ error: "Chat not found" });
+      if (err.message.includes("not available") || err.message.includes("Insufficient stock")) {
+        return response.status(400).json({ error: err.message });
       }
 
-      // Unknown transaction error (already logged above with full details)
-      logger.error("Unknown transaction error:", transactionErrorMessage);
+      // Generic transaction error
       return response.status(500).json({
         error: "Transaction failed",
-        details: transactionErrorMessage,
-      });
-    }
-
-    // If we get here, transaction succeeded but orderId is not set (shouldn't happen)
-    if (!orderId) {
-      logger.error("Transaction succeeded but orderId is not set");
-      return response.status(500).json({
-        error: "Failed to create order",
-        details: "Transaction completed but orderId was not generated",
+        details: err.message,
       });
     }
   

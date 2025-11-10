@@ -272,7 +272,7 @@ describe("Create Order API Tests", () => {
       });
 
     expect(res.statusCode).toBe(404);
-    expect(res.body.error).toContain("Chat not found");
+    expect(res.body.error).toMatch(/Chat not found/i);
   }, 30000);
 
   test("Create order (with chatId - wrong buyer - should fail)", async () => {
@@ -302,7 +302,7 @@ describe("Create Order API Tests", () => {
       });
 
     expect(res.statusCode).toBe(403);
-    expect(res.body.error).toContain("chat does not belong to this buyer");
+    expect(res.body.error).toMatch(/Chat does not belong to this buyer/i);
 
     // Cleanup other buyer
     await cleanupTestData({
@@ -345,7 +345,7 @@ describe("Create Order API Tests", () => {
       });
 
     expect(res.statusCode).toBe(403);
-    expect(res.body.error).toContain("chat does not belong to this seller");
+    expect(res.body.error).toMatch(/Chat does not belong to this seller/i);
 
     // Cleanup other seller and product
     await cleanupTestData({
@@ -387,7 +387,7 @@ describe("Create Order API Tests", () => {
       });
 
     expect(res.statusCode).toBe(403);
-    expect(res.body.error).toContain("does not belong to the seller in this chat");
+    expect(res.body.error).toMatch(/does not belong to seller/);
 
     // Cleanup other seller and product
     await cleanupTestData({
@@ -420,29 +420,6 @@ describe("Create Order API Tests", () => {
     expect(orderDoc.data().paymentMethod).toBe("WavePay");
   }, 30000);
 
-  test("Create order (other payment method)", async () => {
-    const res = await request(BASE_URL)
-      .post("/createOrder")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .send({
-        sellerId: sellerUid,
-        products: [{ productId: productId1, quantity: 1 }],
-        paymentMethod: "other",
-        deliveryAddress: {
-          street: "123 Test St",
-          city: "Yangon",
-          phone: "+959123456789",
-        },
-      });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-
-    orderIds.push(res.body.orderId);
-
-    const orderDoc = await firestore.collection("orders").doc(res.body.orderId).get();
-    expect(orderDoc.data().paymentMethod).toBe("other");
-  }, 30000);
 
   // ========================================================================
   // VALIDATION ERROR CASES

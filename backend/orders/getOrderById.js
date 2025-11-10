@@ -23,7 +23,6 @@ exports.getOrderById = onRequest(async (request, response) => {
     const { uid: userId, user: userData } = await verifyUser(request);
 
     const { orderId } = request.query;
-    // If no orderId is provided, return a bad request response
     if (!orderId) {
       return response.status(400).json({ error: "Missing required parameter: orderId" });
     }
@@ -31,7 +30,6 @@ exports.getOrderById = onRequest(async (request, response) => {
     // Fetch order document from Firestore
     const orderRef = admin.firestore().collection("orders").doc(orderId);
     const orderDoc = await orderRef.get();
-
     if (!orderDoc.exists) {
       return response.status(404).json({ error: "Order not found" });
     }
