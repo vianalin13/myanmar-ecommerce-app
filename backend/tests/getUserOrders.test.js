@@ -6,7 +6,8 @@
  * - Phone number authentication (Myanmar format)
  * - Test isolation (beforeEach/afterEach)
  * - Complete cleanup to prevent repeated run failures
- * - Tests buyer orders, seller orders, role filtering, status filtering
+ * - Tests buyer orders, seller orders (automatic role detection)
+ * - Note: Status filtering is now handled on frontend, not tested here
  */
 
 const request = require("supertest");
@@ -88,10 +89,7 @@ describe("Get User Orders API Tests", () => {
   test("Get user orders (as buyer - no orders)", async () => {
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-      });
+      .set("Authorization", `Bearer ${buyerToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
@@ -105,10 +103,7 @@ describe("Get User Orders API Tests", () => {
 
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-      });
+      .set("Authorization", `Bearer ${buyerToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
@@ -127,10 +122,7 @@ describe("Get User Orders API Tests", () => {
 
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-      });
+      .set("Authorization", `Bearer ${buyerToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
@@ -177,93 +169,35 @@ describe("Get User Orders API Tests", () => {
     });
   }, 30000);
 
-  test("Get user orders (as buyer - filter by status: pending)", async () => {
+  test("Get user orders (as buyer - orders with different statuses)", async () => {
     await createTestOrder("COD", "pending");
     await createTestOrder("KBZPay", "confirmed");
-    await createTestOrder("WavePay", "pending");
+    await createTestOrder("WavePay", "shipped");
+    await createTestOrder("COD", "delivered");
+    await createTestOrder("KBZPay", "cancelled");
 
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-        orderStatus: "pending",
-      });
+      .set("Authorization", `Bearer ${buyerToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(2);
-    expect(res.body.orders).toHaveLength(2);
+    expect(res.body.count).toBe(5);
+    expect(res.body.orders).toHaveLength(5);
     
-    // Verify all orders are pending
+    // Verify all orders belong to buyer (status filtering is now frontend responsibility)
     res.body.orders.forEach(order => {
-      expect(order.status).toBe("pending");
       expect(order.buyerId).toBe(buyerUid);
+      expect(order.userRole).toBe("buyer");
     });
-  }, 30000);
 
-  test("Get user orders (as buyer - filter by status: confirmed)", async () => {
-    await createTestOrder("COD", "pending");
-    await createTestOrder("KBZPay", "confirmed");
-    await createTestOrder("WavePay", "confirmed");
-
-    const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-        orderStatus: "confirmed",
-      });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(2);
-    expect(res.body.orders).toHaveLength(2);
-    
-    // Verify all orders are confirmed
-    res.body.orders.forEach(order => {
-      expect(order.status).toBe("confirmed");
-    });
-  }, 30000);
-
-  test("Get user orders (as buyer - filter by status: shipped)", async () => {
-    await createTestOrder("COD", "pending");
-    await createTestOrder("KBZPay", "shipped");
-    await createTestOrder("WavePay", "delivered");
-
-    const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-        orderStatus: "shipped",
-      });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(1);
-    expect(res.body.orders).toHaveLength(1);
-    expect(res.body.orders[0].status).toBe("shipped");
-  }, 30000);
-
-  test("Get user orders (as buyer - filter by status: cancelled)", async () => {
-    await createTestOrder("COD", "pending");
-    const cancelledOrderId = await createTestOrder("KBZPay", "cancelled");
-
-    const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-        orderStatus: "cancelled",
-      });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(1);
-    expect(res.body.orders).toHaveLength(1);
-    expect(res.body.orders[0].orderId).toBe(cancelledOrderId);
-    expect(res.body.orders[0].status).toBe("cancelled");
+    // Verify we have orders with different statuses
+    const statuses = res.body.orders.map(o => o.status);
+    expect(statuses).toContain("pending");
+    expect(statuses).toContain("confirmed");
+    expect(statuses).toContain("shipped");
+    expect(statuses).toContain("delivered");
+    expect(statuses).toContain("cancelled");
   }, 30000);
 
   // ========================================================================
@@ -273,15 +207,13 @@ describe("Get User Orders API Tests", () => {
   test("Get user orders (as seller - no orders)", async () => {
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${sellerToken}`)
-      .query({
-        role: "seller",
-      });
+      .set("Authorization", `Bearer ${sellerToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.orders).toEqual([]);
     expect(res.body.count).toBe(0);
+    expect(res.body.message).toBe("No orders found");
   }, 30000);
 
   test("Get user orders (as seller - single order)", async () => {
@@ -289,10 +221,7 @@ describe("Get User Orders API Tests", () => {
 
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${sellerToken}`)
-      .query({
-        role: "seller",
-      });
+      .set("Authorization", `Bearer ${sellerToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
@@ -311,10 +240,7 @@ describe("Get User Orders API Tests", () => {
 
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${sellerToken}`)
-      .query({
-        role: "seller",
-      });
+      .set("Authorization", `Bearer ${sellerToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
@@ -328,84 +254,22 @@ describe("Get User Orders API Tests", () => {
     });
   }, 30000);
 
-  test("Get user orders (as seller - filter by status)", async () => {
+  test("Get user orders (as seller - orders with different statuses)", async () => {
     await createTestOrder("COD", "pending");
     await createTestOrder("KBZPay", "confirmed");
-    await createTestOrder("WavePay", "pending");
-
-    const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .set("Authorization", `Bearer ${sellerToken}`)
-      .query({
-        role: "seller",
-        orderStatus: "pending",
-      });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(2);
-    expect(res.body.orders).toHaveLength(2);
-    
-    // Verify all orders are pending and belong to seller
-    res.body.orders.forEach(order => {
-      expect(order.status).toBe("pending");
-      expect(order.sellerId).toBe(sellerUid);
-    });
-  }, 30000);
-
-  test("Get user orders (as seller - buyer is not a seller)", async () => {
-    // Buyer tries to get seller orders (should fail)
-    const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "seller",
-      });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.body.error).toMatch(/Unauthorized: user is not a seller/);
-  }, 30000);
-
-  // ========================================================================
-  // ALL ORDERS TESTS (no role specified)
-  // ========================================================================
-
-  test("Get user orders (no role - buyer gets all buyer orders)", async () => {
-    await createTestOrder("COD", "pending");
-    await createTestOrder("KBZPay", "confirmed");
-
-    const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`);
-      // No role query param
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(2);
-    expect(res.body.orders).toHaveLength(2);
-    
-    // Verify all orders belong to buyer
-    res.body.orders.forEach(order => {
-      expect(order.buyerId).toBe(buyerUid);
-      expect(order.userRole).toBe("buyer");
-    });
-  }, 30000);
-
-  test("Get user orders (no role - seller gets all seller orders)", async () => {
-    await createTestOrder("COD", "pending");
-    await createTestOrder("KBZPay", "confirmed");
+    await createTestOrder("WavePay", "shipped");
+    await createTestOrder("COD", "delivered");
 
     const res = await request(BASE_URL)
       .get("/getUserOrders")
       .set("Authorization", `Bearer ${sellerToken}`);
-      // No role query param
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(2);
-    expect(res.body.orders).toHaveLength(2);
+    expect(res.body.count).toBe(4);
+    expect(res.body.orders).toHaveLength(4);
     
-    // Verify all orders belong to seller
+    // Verify all orders belong to seller (status filtering is now frontend responsibility)
     res.body.orders.forEach(order => {
       expect(order.sellerId).toBe(sellerUid);
       expect(order.userRole).toBe("seller");
@@ -418,10 +282,7 @@ describe("Get User Orders API Tests", () => {
 
   test("Get user orders (no auth token)", async () => {
     const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .query({
-        role: "buyer",
-      });
+      .get("/getUserOrders");
 
     expect(res.statusCode).toBe(500); // verifyUser throws error
     expect(res.body.error).toBeDefined();
@@ -430,13 +291,48 @@ describe("Get User Orders API Tests", () => {
   test("Get user orders (invalid auth token)", async () => {
     const res = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", "Bearer invalidToken123")
-      .query({
-        role: "buyer",
-      });
+      .set("Authorization", "Bearer invalidToken123");
 
     expect(res.statusCode).toBe(500); // verifyUser throws error
     expect(res.body.error).toBeDefined();
+  }, 30000);
+
+  test("Get user orders (user with no role)", async () => {
+    // Create user without role (this shouldn't happen in practice, but test edge case)
+    const noRoleUid = `TEST_NO_ROLE_${Date.now()}`;
+    const noRoleToken = await createAuthUserAndGetToken(noRoleUid, "buyer", "unverified");
+    
+    // Manually remove role from user document to simulate edge case
+    await firestore.collection("users").doc(noRoleUid).update({ role: null });
+
+    const res = await request(BASE_URL)
+      .get("/getUserOrders")
+      .set("Authorization", `Bearer ${noRoleToken}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/User must have a valid role/);
+
+    // Cleanup
+    await cleanupTestData({ buyerUid: noRoleUid });
+  }, 30000);
+
+  test("Get user orders (user with invalid role)", async () => {
+    // Create user with invalid role
+    const invalidRoleUid = `TEST_INVALID_ROLE_${Date.now()}`;
+    const invalidRoleToken = await createAuthUserAndGetToken(invalidRoleUid, "buyer", "unverified");
+    
+    // Manually set invalid role
+    await firestore.collection("users").doc(invalidRoleUid).update({ role: "invalid_role" });
+
+    const res = await request(BASE_URL)
+      .get("/getUserOrders")
+      .set("Authorization", `Bearer ${invalidRoleToken}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/User must have a valid role/);
+
+    // Cleanup
+    await cleanupTestData({ buyerUid: invalidRoleUid });
   }, 30000);
 
   // ========================================================================
@@ -447,9 +343,7 @@ describe("Get User Orders API Tests", () => {
     const res = await request(BASE_URL)
       .post("/getUserOrders")
       .set("Authorization", `Bearer ${buyerToken}`)
-      .send({
-        role: "buyer",
-      });
+      .send({});
 
     expect(res.statusCode).toBe(405);
     expect(res.body.error).toMatch(/Use GET method/);
@@ -459,9 +353,7 @@ describe("Get User Orders API Tests", () => {
     const res = await request(BASE_URL)
       .patch("/getUserOrders")
       .set("Authorization", `Bearer ${buyerToken}`)
-      .send({
-        role: "buyer",
-      });
+      .send({});
 
     expect(res.statusCode).toBe(405);
     expect(res.body.error).toMatch(/Use GET method/);
@@ -471,36 +363,25 @@ describe("Get User Orders API Tests", () => {
   // EDGE CASES
   // ========================================================================
 
-  test("Get user orders (invalid role parameter)", async () => {
-    // Invalid role should still work (treats as "all orders")
-    const res = await request(BASE_URL)
-      .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "invalid_role",
-      });
-
-    // Should return buyer orders (because role doesn't match "buyer" or "seller")
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-  }, 30000);
-
-  test("Get user orders (invalid status filter)", async () => {
+  test("Get user orders (query parameters ignored)", async () => {
+    // Query parameters are ignored - function uses user's role from database
     await createTestOrder("COD", "pending");
 
-    // Invalid status filter - should return empty array (no matches)
     const res = await request(BASE_URL)
       .get("/getUserOrders")
       .set("Authorization", `Bearer ${buyerToken}`)
       .query({
-        role: "buyer",
-        orderStatus: "invalid_status",
+        role: "invalid_role", // Should be ignored
+        orderStatus: "pending", // Should be ignored
+        randomParam: "value", // Should be ignored
       });
 
+    // Should still return buyer orders (ignores query params)
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.count).toBe(0);
-    expect(res.body.orders).toEqual([]);
+    expect(res.body.count).toBe(1);
+    expect(res.body.orders[0].buyerId).toBe(buyerUid);
+    expect(res.body.orders[0].userRole).toBe("buyer");
   }, 30000);
 
   test("Get user orders (multiple buyers - isolation)", async () => {
@@ -532,10 +413,7 @@ describe("Get User Orders API Tests", () => {
     // First buyer should only see their orders
     const res1 = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .query({
-        role: "buyer",
-      });
+      .set("Authorization", `Bearer ${buyerToken}`);
 
     expect(res1.statusCode).toBe(200);
     expect(res1.body.count).toBe(2);
@@ -546,10 +424,7 @@ describe("Get User Orders API Tests", () => {
     // Second buyer should only see their order
     const res2 = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${buyer2Token}`)
-      .query({
-        role: "buyer",
-      });
+      .set("Authorization", `Bearer ${buyer2Token}`);
 
     expect(res2.statusCode).toBe(200);
     expect(res2.body.count).toBe(1);
@@ -559,6 +434,7 @@ describe("Get User Orders API Tests", () => {
     // Cleanup
     await cleanupTestData({
       buyerUid: buyer2Uid,
+      orderIds: [buyer2OrderId],
     });
   }, 30000);
 
@@ -602,10 +478,7 @@ describe("Get User Orders API Tests", () => {
     // First seller should only see their order
     const res1 = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${sellerToken}`)
-      .query({
-        role: "seller",
-      });
+      .set("Authorization", `Bearer ${sellerToken}`);
 
     expect(res1.statusCode).toBe(200);
     expect(res1.body.count).toBe(1);
@@ -614,10 +487,7 @@ describe("Get User Orders API Tests", () => {
     // Second seller should only see their order
     const res2 = await request(BASE_URL)
       .get("/getUserOrders")
-      .set("Authorization", `Bearer ${seller2Token}`)
-      .query({
-        role: "seller",
-      });
+      .set("Authorization", `Bearer ${seller2Token}`);
 
     expect(res2.statusCode).toBe(200);
     expect(res2.body.count).toBe(1);
@@ -630,4 +500,3 @@ describe("Get User Orders API Tests", () => {
     });
   }, 30000);
 });
-
