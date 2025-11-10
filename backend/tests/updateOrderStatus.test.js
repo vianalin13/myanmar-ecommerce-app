@@ -293,7 +293,7 @@ describe("Update Order Status API Tests", () => {
   // BUYER CANCELLATION TESTS
   // ========================================================================
 
-  test("Buyer cancel order (pending status)", async () => {
+  test("Buyer cancel order (pending status - unpaid order)", async () => {
     const orderId = await createTestOrderLocal();
 
     const res = await request(BASE_URL)
@@ -306,18 +306,22 @@ describe("Update Order Status API Tests", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.status).toBe("cancelled"); // Unpaid order stays "cancelled"
 
-    // Verify order is cancelled
+    // Verify order is cancelled (unpaid order)
     const orderDoc = await firestore.collection("orders").doc(orderId).get();
-    expect(orderDoc.data().status).toBe("cancelled");
-    expect(orderDoc.data().cancelledAt).toBeDefined();
+    const orderData = orderDoc.data();
+    expect(orderData.status).toBe("cancelled");
+    expect(orderData.paymentStatus).toBe("pending"); // Payment status stays pending
+    expect(orderData.cancelledAt).toBeDefined();
+    expect(orderData.refundedAt).toBeUndefined(); // Not refunded (unpaid)
 
     // Verify stock is restored
     const productDoc = await firestore.collection("products").doc(productId).get();
     expect(productDoc.data().stock).toBe(100); // Original stock restored (100 - 2 + 2 = 100)
   }, 30000);
 
-  test("Buyer cancel order (confirmed status)", async () => {
+  test("Buyer cancel order (confirmed status - unpaid order)", async () => {
     const orderId = await createTestOrderLocal();
 
     // First confirm
@@ -340,6 +344,15 @@ describe("Update Order Status API Tests", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.status).toBe("cancelled"); // Unpaid order stays "cancelled"
+
+    // Verify order is cancelled (unpaid order)
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    const orderData = orderDoc.data();
+    expect(orderData.status).toBe("cancelled");
+    expect(orderData.paymentStatus).toBe("pending"); // Payment status stays pending
+    expect(orderData.cancelledAt).toBeDefined();
+    expect(orderData.refundedAt).toBeUndefined(); // Not refunded (unpaid)
 
     // Verify stock is restored
     const productDoc = await firestore.collection("products").doc(productId).get();
@@ -468,14 +481,48 @@ describe("Update Order Status API Tests", () => {
       });
 
     expect(res.statusCode).toBe(400);
-    expect(res.body.error).toMatch(/already cancelled/);
+    expect(res.body.error).toMatch(/already cancelled or refunded/);
+  }, 30000);
+
+  test("Buyer cancel order (already refunded - should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Confirm payment first
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN123456",
+      });
+
+    // Cancel paid order (becomes refunded)
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    // Try to cancel again (should fail - order is now refunded)
+    const res = await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/already cancelled or refunded/);
   }, 30000);
 
   // ========================================================================
   // SELLER CANCELLATION TESTS
   // ========================================================================
 
-  test("Seller cancel order (pending status)", async () => {
+  test("Seller cancel order (pending status - unpaid order)", async () => {
     const orderId = await createTestOrderLocal();
 
     const res = await request(BASE_URL)
@@ -488,6 +535,15 @@ describe("Update Order Status API Tests", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.status).toBe("cancelled"); // Unpaid order stays "cancelled"
+
+    // Verify order is cancelled (unpaid order)
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    const orderData = orderDoc.data();
+    expect(orderData.status).toBe("cancelled");
+    expect(orderData.paymentStatus).toBe("pending"); // Payment status stays pending
+    expect(orderData.cancelledAt).toBeDefined();
+    expect(orderData.refundedAt).toBeUndefined(); // Not refunded (unpaid)
 
     // Verify stock is restored
     const productDoc = await firestore.collection("products").doc(productId).get();
@@ -495,13 +551,13 @@ describe("Update Order Status API Tests", () => {
   }, 30000);
 
   // ========================================================================
-  // REFUND TESTS
+  // REFUND TESTS (Cancelling Paid Orders)
   // ========================================================================
 
-  test("Seller refund order (paid order)", async () => {
+  test("Cancel paid order (should automatically become refunded)", async () => {
     const orderId = await createTestOrderLocal("KBZPay");
 
-    // Confirm payment
+    // Confirm payment first
     await request(BASE_URL)
       .post("/simulatePayment")
       .set("Authorization", `Bearer ${buyerToken}`)
@@ -510,34 +566,135 @@ describe("Update Order Status API Tests", () => {
         transactionId: "TXN123456",
       });
 
-    // Refund the order
+    // Verify payment is confirmed
+    const orderDocBefore = await firestore.collection("orders").doc(orderId).get();
+    expect(orderDocBefore.data().paymentStatus).toBe("paid");
+
+    // Cancel the paid order (should automatically become refunded)
     const res = await request(BASE_URL)
       .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${sellerToken}`)
+      .set("Authorization", `Bearer ${buyerToken}`)
       .send({
         orderId: orderId,
-        status: "refunded",
+        status: "cancelled",
       });
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.status).toBe("refunded"); // Paid order becomes "refunded"
 
     // Verify order is refunded
     const orderDoc = await firestore.collection("orders").doc(orderId).get();
     const orderData = orderDoc.data();
     expect(orderData.status).toBe("refunded");
     expect(orderData.paymentStatus).toBe("refunded");
+    expect(orderData.refundedAt).toBeDefined();
+    expect(orderData.refundedBy).toBe(buyerUid);
+    expect(orderData.cancelledAt).toBeDefined(); // Also has cancelledAt timestamp
 
     // Verify stock is restored
     const productDoc = await firestore.collection("products").doc(productId).get();
     expect(productDoc.data().stock).toBe(100); // Stock restored
   }, 30000);
 
-  test("Seller refund order (unpaid order - should fail)", async () => {
+  test("Seller cancel paid order (should automatically become refunded)", async () => {
     const orderId = await createTestOrderLocal("KBZPay");
-    // Order is created with paymentStatus: "pending"
 
-    // Try to refund unpaid order (should fail)
+    // Confirm payment first
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN123456",
+      });
+
+    // Seller cancels the paid order (should automatically become refunded)
+    const res = await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.status).toBe("refunded"); // Paid order becomes "refunded"
+
+    // Verify order is refunded
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    const orderData = orderDoc.data();
+    expect(orderData.status).toBe("refunded");
+    expect(orderData.paymentStatus).toBe("refunded");
+    expect(orderData.refundedAt).toBeDefined();
+    expect(orderData.refundedBy).toBe(sellerUid);
+    expect(orderData.cancelledAt).toBeDefined(); // Also has cancelledAt timestamp
+
+    // Verify stock is restored
+    const productDoc = await firestore.collection("products").doc(productId).get();
+    expect(productDoc.data().stock).toBe(100); // Stock restored
+  }, 30000);
+
+  test("Cancel paid order (confirmed status - should become refunded)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Confirm payment first
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN123456",
+      });
+
+    // Confirm order status
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({
+        orderId: orderId,
+        status: "confirmed",
+      });
+
+    // Cancel the paid confirmed order (should automatically become refunded)
+    const res = await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.status).toBe("refunded"); // Paid order becomes "refunded"
+
+    // Verify order is refunded
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    const orderData = orderDoc.data();
+    expect(orderData.status).toBe("refunded");
+    expect(orderData.paymentStatus).toBe("refunded");
+    expect(orderData.refundedAt).toBeDefined();
+
+    // Verify stock is restored
+    const productDoc = await firestore.collection("products").doc(productId).get();
+    expect(productDoc.data().stock).toBe(100); // Stock restored
+  }, 30000);
+
+  test("Cannot set refunded status directly (should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Confirm payment first
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN123456",
+      });
+
+    // Try to set refunded status directly (should fail)
     const res = await request(BASE_URL)
       .patch("/updateOrderStatus")
       .set("Authorization", `Bearer ${sellerToken}`)
@@ -547,7 +704,38 @@ describe("Update Order Status API Tests", () => {
       });
 
     expect(res.statusCode).toBe(400);
-    expect(res.body.error).toMatch(/Cannot refund an unpaid order/);
+    expect(res.body.error).toMatch(/Cannot set refunded status directly/);
+    expect(res.body.error).toMatch(/automatically set when cancelling/);
+
+    // Verify order is still paid (not refunded)
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    const orderData = orderDoc.data();
+    expect(orderData.status).toBe("pending"); // Still pending (not cancelled/refunded)
+    expect(orderData.paymentStatus).toBe("paid"); // Payment is still paid
+  }, 30000);
+
+  test("Cannot set refunded status directly on unpaid order (should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+    // Order is created with paymentStatus: "pending"
+
+    // Try to set refunded status directly on unpaid order (should fail)
+    const res = await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({
+        orderId: orderId,
+        status: "refunded",
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/Cannot set refunded status directly/);
+    expect(res.body.error).toMatch(/automatically set when cancelling/);
+
+    // Verify order is still pending (not refunded)
+    const orderDoc = await firestore.collection("orders").doc(orderId).get();
+    const orderData = orderDoc.data();
+    expect(orderData.status).toBe("pending");
+    expect(orderData.paymentStatus).toBe("pending");
   }, 30000);
 
   // ========================================================================

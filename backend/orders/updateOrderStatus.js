@@ -10,6 +10,28 @@ const { logOrderEvent } = require("./utils");
  * UPDATE ORDER STATUS
  * Seller or admin can update order status (confirmed, shipped, delivered, cancelled)
  * Buyers can view order progress but not change it (except for cancelling under some conditions).
+ * 
+ * FUNCTION FLOW:
+ * 1. VALIDATION: HTTP method, required fields, valid statuses, user authentication
+ * 2. AUTHORIZATION: Check user role (buyer/seller/admin) and permissions
+ * 3. STATUS VALIDATION: Validate status transitions (prevent invalid changes)
+ * 4. FINAL STATUS: Determine final status
+ * 5. UPDATE DATA: Prepare update data with status-specific fields:
+ *    - Shipped: tracking number (required)
+ *    - Delivered: proof of delivery (required), COD payment confirmation, escrow release
+ *    - Cancelled: cancelledAt timestamp (set when cancellation is requested)
+ *    - Refunded: refundedAt, refundedBy, paymentStatus (set when paid order is cancelled)
+ *      Note: Refunded orders also have cancelledAt (cancellation was requested)
+ * 6. STOCK RESTORATION: Restore stock atomically if cancelling pending/confirmed orders
+ * 7. UPDATE ORDER: Update order status (with or without transaction)
+ * 8. AUDIT LOGGING: Log all status changes, refunds, tracking, delivery proof, escrow releases
+ * 9. RESPONSE: Return success with final status
+ * 
+ * Status Rules:
+ * - Cancelled: Can only be set if order is pending or confirmed (before shipping)
+ *   - If payment was paid → Status becomes "refunded" (payment refunded)
+ *   - If payment was not paid → Status becomes "cancelled" (payment stays pending)
+ * - Stock restoration: Always occurs for cancelled/refunded orders (pending/confirmed only)
  */
 exports.updateOrderStatus = onRequest(async (request, response) => {
   try {
@@ -32,7 +54,7 @@ exports.updateOrderStatus = onRequest(async (request, response) => {
       return response.status(400).json({ error: "Invalid order status" });
     }
 
-    // Verify user (seller or admin)
+    // Verify user
     const { uid: userId, user: userData } = await verifyUser(request);
 
     // Get order document from Firestore
@@ -60,9 +82,9 @@ exports.updateOrderStatus = onRequest(async (request, response) => {
           error: "Unauthorized: buyers can only cancel orders, not update other statuses" 
         });
       }
-      // Check if already cancelled FIRST (before checking pending/confirmed)
-      if (currentStatus === "cancelled") {
-        return response.status(400).json({ error: "Order is already cancelled" });
+      // Check if already cancelled or refunded FIRST (before checking pending/confirmed)
+      if (currentStatus === "cancelled" || currentStatus === "refunded") {
+        return response.status(400).json({ error: "Order is already cancelled or refunded" });
       }
       // Buyers can only cancel orders that are pending or confirmed
       if (currentStatus !== "pending" && currentStatus !== "confirmed") {
@@ -81,14 +103,35 @@ exports.updateOrderStatus = onRequest(async (request, response) => {
     if (status === "cancelled" && currentStatus === "delivered") {
       return response.status(400).json({ error: "Cannot cancel a delivered order" });
     }
-    // Prevent refunding an unpaid order (since no payment was made)
-    if (status === "refunded" && currentStatus !== "paid" && orderData.paymentStatus !== "paid") {
-      return response.status(400).json({ error: "Cannot refund an unpaid order" });
+    // Prevent cancelling an already shipped order (logical constraint)
+    if (status === "cancelled" && currentStatus === "shipped") {
+      return response.status(400).json({ error: "Cannot cancel a shipped order" });
+    }
+    // Prevent setting "refunded" status directly (it's automatically set when cancelling paid orders)
+    if (status === "refunded") {
+      return response.status(400).json({ 
+        error: "Cannot set refunded status directly. Refunded status is automatically set when cancelling an order with paid payment." 
+      });
+    }
+
+    // Determine final status for cancellation
+    // If cancelling a paid order, status becomes "refunded" (payment refunded)
+    // If cancelling an unpaid order, status stays "cancelled" (payment stays pending)
+    let finalStatus = status;
+    if (status === "cancelled") {
+      if (orderData.paymentStatus === "paid") {
+        // Payment was paid → status becomes "refunded"
+        finalStatus = "refunded";
+      } else {
+        // Payment was not paid → status stays "cancelled"
+        finalStatus = "cancelled";
+      }
     }
 
     // Prepare update data
+    // Note: Status may change from "cancelled" to "refunded" if payment was paid
     const updateData = {
-      status, // new status
+      status: finalStatus, // final status (may be "refunded" if payment was paid)
       updatedAt: FieldValue.serverTimestamp(), // always update last modified time
     };
 
@@ -181,10 +224,27 @@ exports.updateOrderStatus = onRequest(async (request, response) => {
       }
     }
 
-    // Check if stock restoration is needed (for cancelled or refunded orders)
+    // Set timestamps and payment status based on final status
+    // Do this BEFORE transaction/no-transaction branch to avoid duplication
+    if (status === "cancelled") {
+      // Set cancelledAt when cancellation is requested (regardless of final status)
+      // This applies to both unpaid (stays "cancelled") and paid (becomes "refunded") orders
+      updateData.cancelledAt = FieldValue.serverTimestamp();
+    }
+    
+    if (finalStatus === "refunded") {
+      // Refunded status: payment was paid, so refund it
+      updateData.paymentStatus = "refunded";
+      updateData.refundedAt = FieldValue.serverTimestamp();
+      updateData.refundedBy = userId;
+    }
+
+    // Check if stock restoration is needed (for cancelled/refunded orders)
+    // Stock is always restored when cancelling (regardless of payment status)
+    // Only restore stock if order is pending or confirmed (before shipping)
     const needsStockRestoration = 
-      (status === "cancelled" && currentStatus !== "cancelled") || 
-      status === "refunded";
+      status === "cancelled" && 
+      (currentStatus === "pending" || currentStatus === "confirmed");
 
     // Use transaction to ensure atomicity: stock restoration and order update happen together
     // If stock restoration fails, order status won't be updated (prevents inconsistent state)
@@ -220,20 +280,14 @@ exports.updateOrderStatus = onRequest(async (request, response) => {
           }
 
           // Step 3: Update order status within same transaction
-          if (status === "cancelled") {
-            updateData.cancelledAt = FieldValue.serverTimestamp();
-          }
-          if (status === "refunded") {
-            updateData.paymentStatus = "refunded";
-          }
-
+          // Note: Timestamps and payment status are already set in updateData above
           transaction.update(orderRef, updateData);
         });
       } catch (transactionError) {
         // If transaction fails (e.g., product deleted), don't update order status
         logger.error("Failed to restore stock and update order status:", {
           orderId,
-          status,
+          finalStatus, // Use finalStatus for accuracy (may be "refunded" if payment was paid)
           error: transactionError.message,
           stack: transactionError.stack,
         });
@@ -254,18 +308,27 @@ exports.updateOrderStatus = onRequest(async (request, response) => {
       }
     } else {
       // No stock restoration needed, just update order status
-      if (status === "cancelled") {
-        updateData.cancelledAt = FieldValue.serverTimestamp();
-      }
+      // Note: Timestamps and payment status are already set in updateData above
       await orderRef.update(updateData);
     }
 
     // Log status change (useful for dispute resolution and analytics)
     await logOrderEvent(orderId, "status_updated", userId, {
       oldStatus: currentStatus,
-      newStatus: status,
+      newStatus: finalStatus, // Log final status (may be "refunded" if payment was paid)
       notes: notes || null,
     });
+
+    // Log refund event if order was refunded
+    if (finalStatus === "refunded") {
+      await logOrderEvent(orderId, "order_refunded", userId, {
+        refundedBy: userId,
+        refundedAmount: orderData.totalAmount,
+        paymentMethod: orderData.paymentMethod,
+        triggeredBy: "cancellation",
+      });
+      logger.info(`Order ${orderId} refunded by ${userId} (payment was paid, cancelled order)`);
+    }
 
     // Log tracking number when order is shipped (mandatory)
     if (status === "shipped") {
@@ -302,14 +365,14 @@ exports.updateOrderStatus = onRequest(async (request, response) => {
     }
 
     // Helpful info log for emulator or production monitoring
-    logger.info(`Order ${orderId} status updated from ${currentStatus} to ${status} by ${userId}`);
+    logger.info(`Order ${orderId} status updated from ${currentStatus} to ${finalStatus} by ${userId}`);
 
     // Respond to client
     return response.json({
       success: true,
       message: "Order status updated successfully",
       orderId,
-      status,
+      status: finalStatus, // Return final status (may be "refunded" if payment was paid)
     });
   } catch (error) {
     logger.error("Error updating order status:", error);
