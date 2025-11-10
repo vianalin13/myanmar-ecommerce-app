@@ -13,7 +13,7 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const auth = require("./auth");
-const products = require("./products/products");
+const products = require("./products");
 const orders = require("./orders");
 const chats = require("./chats");
 
