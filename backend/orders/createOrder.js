@@ -4,7 +4,7 @@ const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 
 const { verifyUser } = require("../auth"); // Auth function verifying Firebase ID token
-const { logOrderEvent } = require("./utils"); // Utility to log order events
+const { logOrderEvent } = require("./auditLogger"); // Utility to log order events
 
 /**
  * CREATE ORDER

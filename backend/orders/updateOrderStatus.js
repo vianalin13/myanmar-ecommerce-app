@@ -4,7 +4,7 @@ const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 
 const { verifyUser } = require("../auth");
-const { logOrderEvent } = require("./utils");
+const { logOrderEvent } = require("./auditLogger");
 
 /**
  * UPDATE ORDER STATUS

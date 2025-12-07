@@ -80,6 +80,7 @@ exports.createOrder = orders.createOrder;
 exports.updateOrderStatus = orders.updateOrderStatus;
 exports.getUserOrders = orders.getUserOrders;
 exports.getOrderById = orders.getOrderById;
+exports.getOrderLogs = orders.getOrderLogs;
 exports.simulatePayment = orders.simulatePayment;
 exports.releaseEscrow = orders.releaseEscrow;
 //chat functions

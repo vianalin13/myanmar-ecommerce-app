@@ -3,6 +3,7 @@ module.exports = {
   ...require("./updateOrderStatus"),
   ...require("./getUserOrders"),
   ...require("./getOrderById"),
+  ...require("./getOrderLogs"),
   ...require("./simulatePayment"),
   ...require("./releaseEscrow"),
 };
