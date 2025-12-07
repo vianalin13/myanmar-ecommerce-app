@@ -1,8 +1,8 @@
 /**
  * JEST CUSTOM REPORTER
- * Industry standard way to collect and export test results
+ * industry standard way to collect and export test results
  * 
- * This runs in the same process as tests and has access to all test data
+ * this runs in the same process as tests and has access to all test data
  */
 
 const fs = require("fs");
@@ -19,11 +19,11 @@ class ResultsReporter {
   }
 
   onRunComplete(contexts, results) {
-    // This runs ONCE after ALL test suites complete
-    // Load results from file (persists across Jest's module isolation)
+    //this runs once after all test suites complete
+    //load results from file (persists across Jest's module isolation)
     const collectorData = resultsCollector.getAllResults();
     
-    // Debug: Check what's in the collector
+    //debug: check what's in the collector
     console.log("\n[Reporter] Results collector state:");
     console.log(`  Flows: ${collectorData.flows.length}`);
     console.log(`  API Timings: ${collectorData.apiTimings.length}`);
@@ -36,7 +36,7 @@ class ResultsReporter {
     if (this.shouldExport && (collectorData.flows.length > 0 || collectorData.apiTimings.length > 0)) {
       console.log("\n[Reporter] Exporting all test results...");
       
-      // Ensure directory exists
+      //ensure directory exists
       if (!fs.existsSync(this.outputDir)) {
         fs.mkdirSync(this.outputDir, { recursive: true });
       }
