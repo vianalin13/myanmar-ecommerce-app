@@ -9,12 +9,12 @@
 
 const request = require("supertest");
 const { BASE_URL } = require("../testSetup");
-const { setupE2EUsers, cleanupE2EUsers } = require("./sharedSetup");
+const { setupE2EUsers, cleanupE2EUsers } = require("../e2e/sharedSetup");
 const { cleanupTestData } = require("../cleanupHelpers");
 const { createTestProduct } = require("../products/productHelpers");
 const { createTestChat } = require("../chat/chatHelpers");
-const { measureMultipleOperations } = require("./timingHelpers");
-const resultsCollector = require("./resultsCollector");
+const { measureMultipleOperations } = require("../e2e/timingHelpers");
+const resultsCollector = require("../e2e/resultsCollector");
 
 describe("End-to-End: Concurrent User Performance", () => {
   let users;

@@ -29,6 +29,7 @@ const testFiles = [
   "tests/performance/apiPerformance.test.js",
   "tests/performance/chatThroughput.test.js",
   "tests/performance/orderProcessingLatency.test.js",
+  "tests/performance/concurrentPerformance.test.js",
 ];
 
 console.log("\nRunning performance tests...\n");
