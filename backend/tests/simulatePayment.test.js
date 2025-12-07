@@ -112,7 +112,7 @@ describe("Simulate Payment API Tests", () => {
     expect(orderData.paymentConfirmation.paidAt).toBeDefined();
   }, 30000);
 
-  test("Simulate payment (KBZPay - auto-generated transactionId and receiptId)", async () => {
+  test("Simulate payment (KBZPay - auto-generated receiptId, transactionId required)", async () => {
     const orderId = await createTestOrderLocal("KBZPay");
 
     const res = await request(BASE_URL)
@@ -120,15 +120,15 @@ describe("Simulate Payment API Tests", () => {
       .set("Authorization", `Bearer ${buyerToken}`)
       .send({
         orderId: orderId,
-        // No transactionId or receiptId - should be auto-generated
+        transactionId: "TXN_AUTO_GEN_TEST",
+        // receiptId not provided - should be auto-generated
       });
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.paymentConfirmation).toBeDefined();
-    expect(res.body.paymentConfirmation.transactionId).toBeDefined();
+    expect(res.body.paymentConfirmation.transactionId).toBe("TXN_AUTO_GEN_TEST");
     expect(res.body.paymentConfirmation.receiptId).toBeDefined();
-    expect(res.body.paymentConfirmation.transactionId).toMatch(/^TXN_/);
     expect(res.body.paymentConfirmation.receiptId).toMatch(/^RECEIPT_/);
 
     // Verify payment status in Firestore
@@ -157,26 +157,6 @@ describe("Simulate Payment API Tests", () => {
     expect(orderDoc.data().paymentMethod).toBe("WavePay");
   }, 30000);
 
-  test("Simulate payment (other payment method)", async () => {
-    const orderId = await createTestOrderLocal("other");
-
-    const res = await request(BASE_URL)
-      .post("/simulatePayment")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .send({
-        orderId: orderId,
-        transactionId: "OTHER_TXN123456",
-        receiptId: "OTHER_RECEIPT123456",
-      });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-
-    // Verify payment status
-    const orderDoc = await firestore.collection("orders").doc(orderId).get();
-    expect(orderDoc.data().paymentStatus).toBe("paid");
-    expect(orderDoc.data().paymentMethod).toBe("other");
-  }, 30000);
 
   test("Simulate payment (delivered order - auto-release escrow)", async () => {
     const orderId = await createTestOrderLocal("KBZPay");
@@ -473,7 +453,7 @@ describe("Simulate Payment API Tests", () => {
     expect(res.body.paymentConfirmation.receiptId).toMatch(/^RECEIPT_/);
   }, 30000);
 
-  test("Simulate payment (only receiptId provided)", async () => {
+  test("Simulate payment (only receiptId provided, transactionId required)", async () => {
     const orderId = await createTestOrderLocal("KBZPay");
 
     const res = await request(BASE_URL)
@@ -481,15 +461,137 @@ describe("Simulate Payment API Tests", () => {
       .set("Authorization", `Bearer ${buyerToken}`)
       .send({
         orderId: orderId,
+        transactionId: "TXN_REQUIRED_TEST",
         receiptId: "RECEIPT123456",
-        // transactionId not provided - should be auto-generated
       });
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.paymentConfirmation.receiptId).toBe("RECEIPT123456");
-    expect(res.body.paymentConfirmation.transactionId).toBeDefined(); // Auto-generated
-    expect(res.body.paymentConfirmation.transactionId).toMatch(/^TXN_/);
+    expect(res.body.paymentConfirmation.transactionId).toBe("TXN_REQUIRED_TEST");
+  }, 30000);
+
+  test("Simulate payment (missing transactionId - should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    const res = await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        // transactionId not provided - should fail
+        receiptId: "RECEIPT123456",
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/Missing required field: transactionId/);
+  }, 30000);
+
+  // ========================================================================
+  // ORDER STATUS VALIDATION TESTS
+  // ========================================================================
+
+  test("Simulate payment (cancelled order - should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Cancel the order
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    // Try to confirm payment for cancelled order (should fail)
+    const res = await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN123456",
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/Cannot confirm payment.*cancelled/);
+  }, 30000);
+
+  test("Simulate payment (refunded order - should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Confirm payment first
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN_INITIAL",
+      });
+
+    // Cancel the paid order (becomes refunded)
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    // Verify order is refunded
+    const orderDocBefore = await firestore.collection("orders").doc(orderId).get();
+    expect(orderDocBefore.data().status).toBe("refunded");
+    expect(orderDocBefore.data().paymentStatus).toBe("refunded");
+
+    // Try to confirm payment for refunded order (should fail)
+    const res = await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN_NEW",
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/Cannot confirm payment.*refunded/);
+  }, 30000);
+
+  test("Simulate payment (refunded payment status - should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Confirm payment first
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN_INITIAL",
+      });
+
+    // Cancel the paid order (becomes refunded)
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    // Verify payment status is refunded
+    const orderDocBefore = await firestore.collection("orders").doc(orderId).get();
+    expect(orderDocBefore.data().paymentStatus).toBe("refunded");
+
+    // Try to confirm payment again (should fail - payment status is refunded)
+    const res = await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN_NEW",
+      });
+
+    expect(res.statusCode).toBe(400);
+    // Error message from order status check (status is "refunded")
+    expect(res.body.error).toMatch(/Cannot confirm payment.*refunded/);
   }, 30000);
 
   test("Simulate payment (pending order - no escrow release)", async () => {

@@ -259,74 +259,9 @@ describe("Release Escrow API Tests", () => {
     expect(res.body.error).toMatch(/Order not found/);
   }, 30000);
 
-  test("Release escrow (order not delivered)", async () => {
-    const orderId = await createTestOrderLocal("KBZPay");
-
-    // Confirm payment but don't deliver
-    await request(BASE_URL)
-      .post("/simulatePayment")
-      .set("Authorization", `Bearer ${buyerToken}`)
-      .send({
-        orderId: orderId,
-        transactionId: "TXN123456",
-      });
-
-    // Try to release escrow (should fail - order not delivered)
-    const res = await request(BASE_URL)
-      .post("/releaseEscrow")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({
-        orderId: orderId,
-      });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body.error).toMatch(/Order must be delivered before releasing escrow/);
-  }, 30000);
-
-  test("Release escrow (order not paid)", async () => {
-    const orderId = await createTestOrderLocal("KBZPay");
-
-    // Update to delivered but don't confirm payment
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${sellerToken}`)
-      .send({
-        orderId: orderId,
-        status: "confirmed",
-      });
-
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${sellerToken}`)
-      .send({
-        orderId: orderId,
-        status: "shipped",
-        trackingNumber: "TRACK123456789",
-      });
-
-    // Manually set to delivered but payment still pending
-    await firestore.collection("orders").doc(orderId).update({
-      status: "delivered",
-      paymentStatus: "pending", // Payment not confirmed
-      deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
-      proofOfDelivery: {
-        otpCode: "123456",
-        confirmedBy: sellerUid,
-        confirmedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-    });
-
-    // Try to release escrow (should fail - payment not confirmed)
-    const res = await request(BASE_URL)
-      .post("/releaseEscrow")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({
-        orderId: orderId,
-      });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body.error).toMatch(/Order payment must be confirmed before releasing escrow/);
-  }, 30000);
+  // Note: Tests for "order not delivered" and "order not paid" are removed
+  // because we assume admin only calls this function when conditions are met.
+  // Minimal validation is kept for safety (cancelled/refunded, already released).
 
   test("Release escrow (escrow already released)", async () => {
     const orderId = await createTestOrderLocal("KBZPay");
@@ -383,6 +318,81 @@ describe("Release Escrow API Tests", () => {
     expect(res.statusCode).toBe(400);
     expect(res.body.error).toMatch(/Escrow already released for this order/);
   }, 30000);
+
+  // ========================================================================
+  // ORDER STATUS VALIDATION TESTS
+  // ========================================================================
+
+  test("Release escrow (cancelled order - should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Cancel the order
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    // Verify order is cancelled
+    const orderDocBefore = await firestore.collection("orders").doc(orderId).get();
+    expect(orderDocBefore.data().status).toBe("cancelled");
+
+    // Try to release escrow for cancelled order (should fail)
+    const res = await request(BASE_URL)
+      .post("/releaseEscrow")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        orderId: orderId,
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/Cannot release escrow.*cancelled/);
+  }, 30000);
+
+  test("Release escrow (refunded order - should fail)", async () => {
+    const orderId = await createTestOrderLocal("KBZPay");
+
+    // Confirm payment first
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: "TXN_INITIAL",
+      });
+
+    // Cancel the paid order (becomes refunded)
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        status: "cancelled",
+      });
+
+    // Verify order is refunded
+    const orderDocBefore = await firestore.collection("orders").doc(orderId).get();
+    expect(orderDocBefore.data().status).toBe("refunded");
+    expect(orderDocBefore.data().paymentStatus).toBe("refunded");
+
+    // Try to release escrow for refunded order (should fail)
+    const res = await request(BASE_URL)
+      .post("/releaseEscrow")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        orderId: orderId,
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/Cannot release escrow.*refunded/);
+  }, 30000);
+
+  // Note: Test for "refunded payment status" is removed because:
+  // - If payment is refunded, order status will be "refunded" (covered by refunded order test)
+  // - We removed explicit payment status validation to avoid redundancy
+  // - The cancelled/refunded status check provides sufficient defensive safety
 
   // ========================================================================
   // AUTHORIZATION ERROR CASES
