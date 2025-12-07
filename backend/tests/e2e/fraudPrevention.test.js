@@ -5,7 +5,9 @@
  * test scenarios:
  * 1. prevent delivery without proof of delivery
  * 2. prevent shipping without tracking number
- * 3. prevent overselling with concurrent orders (atomic transactions)
+ * 
+ * note: concurrent overselling prevention is tested in concurrentTransactions.test.js
+ * which has more comprehensive tests (5 buyers, different quantities, double payment prevention)
  */
 
 const request = require("supertest");
@@ -255,123 +257,7 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
     });
   }, 30000);
 
-  test("Prevent overselling with concurrent orders (atomic transactions)", async () => {
-    const flowSteps = [];
-    const securityCheckpoints = [];
-
-    //create product with limited stock
-    const limitedProductId = await createTestProduct(users.sellerToken, {
-      name: "Limited Stock Product",
-      price: 10000,
-      stock: 1, //only 1 item in stock
-      category: "Test",
-    });
-    productIds.push(limitedProductId);
-
-    //create two buyers
-    const buyer2Uid = `E2E_BUYER2_${Date.now()}`;
-    const buyer2Token = await createAuthUserAndGetToken(buyer2Uid, "buyer", "unverified");
-
-    //attempt concurrent orders for the same product (should only allow one)
-    const concurrentOrders = await Promise.allSettled([
-      measureTime(async () => {
-        const res = await request(BASE_URL)
-          .post("/createOrder")
-          .set("Authorization", `Bearer ${users.buyerToken}`)
-          .send({
-            sellerId: users.sellerUid,
-            products: [{ productId: limitedProductId, quantity: 1 }],
-            paymentMethod: "COD",
-            deliveryAddress: {
-              street: "123 Test St",
-              city: "Yangon",
-              phone: "+959123456789",
-            },
-          });
-        if (res.statusCode === 200) {
-          orderIds.push(res.body.orderId);
-          securityCheckpoints.push("order_created");
-        }
-        return res;
-      }, "concurrent_order_1"),
-      measureTime(async () => {
-        const res = await request(BASE_URL)
-          .post("/createOrder")
-          .set("Authorization", `Bearer ${buyer2Token}`)
-          .send({
-            sellerId: users.sellerUid,
-            products: [{ productId: limitedProductId, quantity: 1 }],
-            paymentMethod: "COD",
-            deliveryAddress: {
-              street: "456 Test St",
-              city: "Yangon",
-              phone: "+959987654321",
-            },
-          });
-        if (res.statusCode === 200) {
-          orderIds.push(res.body.orderId);
-          securityCheckpoints.push("order_created");
-        }
-        return res;
-      }, "concurrent_order_2"),
-    ]);
-
-    //one should succeed, one should fail (stock insufficient)
-    const results = concurrentOrders.map(p => 
-      p.status === "fulfilled" ? p.value.result : null
-    ).filter(Boolean);
-
-    const successCount = results.filter(r => r.statusCode === 200).length;
-    const failureCount = results.filter(r => r.statusCode !== 200).length;
-
-    expect(successCount).toBe(1);
-    expect(failureCount).toBe(1);
-
-    //add both concurrent order attempts to flow steps
-    concurrentOrders.forEach((order, index) => {
-      if (order.status === "fulfilled") {
-        flowSteps.push(order.value);
-        resultsCollector.recordApiTiming("createOrder", order.value.duration);
-        if (order.value.result.statusCode === 200) {
-          resultsCollector.recordSecurityCheckpoint("order_created", order.value.result.body.orderId);
-        }
-      }
-    });
-
-    securityCheckpoints.push("atomic_transaction_validation");
-    resultsCollector.recordSecurityCheckpoint("atomic_transaction_validation", limitedProductId);
-
-    resultsCollector.recordFraudPrevention(
-      "concurrent_overselling",
-      true,
-      "Atomic transactions prevent overselling"
-    );
-    resultsCollector.recordConcurrentTest({
-      userCount: 2,
-      successCount: 1,
-      failureCount: 1,
-      averageDuration: (concurrentOrders[0].value.duration + concurrentOrders[1].value.duration) / 2,
-      testType: "concurrent_order_creation",
-    });
-
-    //record complete flow
-    const totalDuration = flowSteps.reduce((sum, step) => sum + step.duration, 0);
-    const apiCallCount = flowSteps.length;
-    resultsCollector.recordFlow({
-      scenarioName: "Prevent Overselling with Concurrent Orders",
-      flowType: "fraud_prevention",
-      totalDuration,
-      steps: flowSteps.map(step => ({
-        operation: step.operationName,
-        duration: step.duration,
-      })),
-      apiCallCount,
-      securityCheckpointsHit: securityCheckpoints.length,
-      success: true, // Flow succeeded in preventing overselling
-    });
-
-    //cleanup buyer2
-    await cleanupTestData({ buyerUid: buyer2Uid });
-  }, 30000);
+  // Note: Concurrent overselling prevention is now tested in concurrentTransactions.test.js
+  // which has more comprehensive tests (5 buyers, different quantities, etc.)
 });
 
