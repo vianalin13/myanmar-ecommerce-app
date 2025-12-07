@@ -5,9 +5,9 @@
  * script to run all end-to-end tests and export results
  * 
  * usage:
- *   node e2e/runEndToEndTests.js
- *   node e2e/runEndToEndTests.js --export
- *   node e2e/runEndToEndTests.js --export --output ./custom-output-dir
+ *   node backend/tests/e2e/runEndToEndTests.js 
+ *   node backend/tests/e2e/runEndToEndTests.js --export
+ *   node backend/tests/e2e/runEndToEndTests.js --export --output ./custom-output-dir
  */
 
 const { spawn } = require("child_process");
@@ -21,7 +21,7 @@ const shouldExport = args.includes("--export");
 const outputIndex = args.indexOf("--output");
 const outputDir = outputIndex !== -1 && args[outputIndex + 1] 
   ? args[outputIndex + 1] 
-  : "./test-results";
+  : "./test-results/e2e";
 
 console.log("=".repeat(80));
 console.log("RUNNING END-TO-END TESTS");
@@ -43,7 +43,7 @@ const e2eTestFiles = [
   "tests/e2e/fraudPrevention.test.js",
   "tests/e2e/disputeResolution.test.js",
   "tests/e2e/transparency.test.js",
-  "tests/e2e/concurrentPerformance.test.js",
+  "tests/e2e/concurrentTransactions.test.js",
 ];
 
 //set environment variables for Jest teardown

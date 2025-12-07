@@ -51,7 +51,8 @@ async function createTestOrder(options) {
     .send(orderData);
 
   if (res.statusCode !== 200) {
-    throw new Error(`Failed to create order: ${res.body.error || res.body.details}`);
+    const errorMsg = res.body.error || res.body.details || res.body.message || JSON.stringify(res.body);
+    throw new Error(`Failed to create order: ${errorMsg} (status: ${res.statusCode})`);
   }
 
   return res.body.orderId;
