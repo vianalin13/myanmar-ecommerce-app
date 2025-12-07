@@ -4,7 +4,7 @@
  */
 
 const admin = require("firebase-admin");
-const { firestore } = require("./testSetup");
+const { firestore } = require("../testSetup");
 
 // Single Firebase app instance for client SDK (reuse to avoid multiple app instances)
 let firebaseApp = null;

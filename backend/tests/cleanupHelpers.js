@@ -4,7 +4,7 @@
  */
 
 const { firestore } = require("./testSetup");
-const { deleteAuthUser } = require("./authHelpers");
+const { deleteAuthUser } = require("./auth/authHelpers");
 
 /**
  * Delete Firestore document
@@ -30,9 +30,16 @@ async function cleanupOrderLogs(orderIds) {
     return;
   }
 
+  // Filter out undefined/null values
+  const validOrderIds = orderIds.filter(id => id != null);
+
+  if (validOrderIds.length === 0) {
+    return;
+  }
+
   // Delete order logs in batches of 10 (Firestore "in" query limit)
-  for (let i = 0; i < orderIds.length; i += 10) {
-    const batch = orderIds.slice(i, i + 10);
+  for (let i = 0; i < validOrderIds.length; i += 10) {
+    const batch = validOrderIds.slice(i, i + 10);
     const logsSnapshot = await firestore.collection("orderLogs")
       .where("orderId", "in", batch)
       .get();

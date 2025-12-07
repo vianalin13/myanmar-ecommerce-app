@@ -70,20 +70,39 @@ async function testCreateAdmin(uid) {
 
 async function runTests() {
   try {
-    //const uid = await testRegisterUser();
-    //await testUpdateUserProfile("TEST_UID_1761677483264");
-
-    //const sellerUid = await testRegisterUser();
-    //await testVerifySellerKYC("TEST_UID_1761677592126");
-
-    //const adminTargetUid = await testRegisterUser();
-    await testCreateAdmin("TEST_UID_1761678866541"
-);
+    console.log("=".repeat(60));
+    console.log("AUTH SYSTEM TESTS");
+    console.log("=".repeat(60));
     
-    console.log("all tests passed");
-    console.log("check emulator UI -> firestore -> users");
+    //test 1: register new user
+    console.log("\nTEST 1: Register New User");
+    const uid = await testRegisterUser();
+    
+    //test 2: update user profile
+    console.log("\nTEST 2: Update User Profile");
+    await testUpdateUserProfile(uid);
+    
+    //test 3: register seller and verify KYC
+    console.log("\nTEST 3: Register Seller and Verify KYC");
+    const sellerUid = await testRegisterUser();
+    await testVerifySellerKYC(sellerUid);
+    
+    //test 4: create admin (promote existing user)
+    console.log("\nTEST 4: Promote User to Admin");
+    const adminTargetUid = await testRegisterUser();
+    await testCreateAdmin(adminTargetUid);
+    
+    console.log("\n" + "=".repeat(60));
+    console.log("ALL TESTS PASSED");
+    console.log("=".repeat(60));
+    console.log("Check emulator UI -> Firestore -> users collection");
+    console.log("Created users:");
+    console.log(`  - Regular user: ${uid}`);
+    console.log(`  - Verified seller: ${sellerUid}`);
+    console.log(`  - Admin user: ${adminTargetUid}`);
   } catch (err) {
-    console.error("test failed:", err.message);
+    console.error("\n❌ Test failed:", err.message);
+    console.error(err.stack);
   }
   process.exit(0);
 }

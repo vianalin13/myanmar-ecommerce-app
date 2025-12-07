@@ -6,7 +6,7 @@ module.exports = {
   testEnvironment: "node",
   reporters: [
     "default",
-    ["../helpers/resultsReporter.js", {}], // Custom reporter for exporting results
+    ["./resultsReporter.js", {}], // Custom reporter for exporting results
   ],
   testTimeout: 30000,
 };

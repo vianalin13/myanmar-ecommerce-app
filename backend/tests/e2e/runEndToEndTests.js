@@ -13,7 +13,7 @@
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const resultsCollector = require("../helpers/resultsCollector");
+const resultsCollector = require("./resultsCollector");
 
 //parse command line arguments
 const args = process.argv.slice(2);

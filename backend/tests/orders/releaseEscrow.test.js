@@ -11,12 +11,12 @@
  */
 
 const request = require("supertest");
-const { firestore, BASE_URL } = require("./helpers/testSetup");
+const { firestore, BASE_URL } = require("../testSetup");
 const admin = require("firebase-admin");
-const { createAuthUserAndGetToken } = require("./helpers/authHelpers");
-const { cleanupTestData } = require("./helpers/cleanupHelpers");
-const { createTestProduct } = require("./helpers/productHelpers");
-const { createTestOrder, createDeliveredAndPaidOrder } = require("./helpers/orderHelpers");
+const { createAuthUserAndGetToken } = require("../auth/authHelpers");
+const { cleanupTestData } = require("../cleanupHelpers");
+const { createTestProduct } = require("../products/productHelpers");
+const { createTestOrder, createDeliveredAndPaidOrder } = require("./orderHelpers");
 
 // ============================================================================
 // RELEASE ESCROW TESTS

@@ -10,11 +10,12 @@
  */
 
 const request = require("supertest");
-const { firestore, BASE_URL } = require("./helpers/testSetup");
-const { createAuthUserAndGetToken } = require("./helpers/authHelpers");
-const { cleanupTestData } = require("./helpers/cleanupHelpers");
-const { createTestProduct } = require("./helpers/productHelpers");
-const { createTestOrder } = require("./helpers/orderHelpers");
+const { firestore, BASE_URL } = require("../testSetup");
+const { createAuthUserAndGetToken } = require("../auth/authHelpers");
+const { cleanupTestData } = require("../cleanupHelpers");
+const { createTestProduct } = require("../products/productHelpers");
+const { createTestOrder } = require("./orderHelpers");
+const { createTestChat } = require("../chat/chatHelpers");
 
 // ============================================================================
 // GET ORDER BY ID TESTS
@@ -30,6 +31,7 @@ describe("Get Order By ID API Tests", () => {
   let productId;
   let productIds = [];
   let orderIds = [];
+  let chatIds = [];
 
   // Setup before each test (isolation)
   beforeEach(async () => {
@@ -61,9 +63,11 @@ describe("Get Order By ID API Tests", () => {
       adminUid,
       productIds,
       orderIds,
+      chatIds,
     });
     orderIds = [];
     productIds = [];
+    chatIds = [];
   }, 30000); // Increase timeout for cleanup
 
   // ========================================================================
@@ -365,6 +369,10 @@ describe("Get Order By ID API Tests", () => {
   // ========================================================================
 
   test("Get order by ID (order with chatId)", async () => {
+    // Create a test chat between buyer and seller
+    const chatId = await createTestChat(buyerUid, sellerUid, productId);
+    chatIds.push(chatId);
+
     const orderRes = await request(BASE_URL)
       .post("/createOrder")
       .set("Authorization", `Bearer ${buyerToken}`)
@@ -377,7 +385,7 @@ describe("Get Order By ID API Tests", () => {
           city: "Yangon",
           phone: "+959123456789",
         },
-        chatId: "chat123",
+        chatId: chatId,
       });
 
     const orderId = orderRes.body.orderId;
@@ -391,7 +399,7 @@ describe("Get Order By ID API Tests", () => {
       });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.order.chatId).toBe("chat123");
+    expect(res.body.order.chatId).toBe(chatId);
     expect(res.body.order.orderSource).toBe("chat");
   }, 30000);
 
@@ -472,7 +480,7 @@ describe("Get Order By ID API Tests", () => {
   test("Get order by ID (refunded order)", async () => {
     const orderId = await createTestOrderLocal("KBZPay");
 
-    // Confirm payment
+    // Confirm payment first
     await request(BASE_URL)
       .post("/simulatePayment")
       .set("Authorization", `Bearer ${buyerToken}`)
@@ -481,13 +489,13 @@ describe("Get Order By ID API Tests", () => {
         transactionId: "TXN123456",
       });
 
-    // Refund order
+    // Cancel the paid order (should automatically become refunded)
     await request(BASE_URL)
       .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${sellerToken}`)
+      .set("Authorization", `Bearer ${buyerToken}`)
       .send({
         orderId: orderId,
-        status: "refunded",
+        status: "cancelled",
       });
 
     const res = await request(BASE_URL)

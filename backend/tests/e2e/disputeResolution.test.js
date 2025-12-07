@@ -8,13 +8,13 @@
  */
 
 const request = require("supertest");
-const { BASE_URL } = require("../helpers/testSetup");
+const { BASE_URL } = require("../testSetup");
 const { setupE2EUsers, cleanupE2EUsers } = require("./sharedSetup");
-const { cleanupTestData } = require("../helpers/cleanupHelpers");
-const { createTestProduct } = require("../helpers/productHelpers");
-const { createTestChat } = require("../helpers/chatHelpers");
-const { measureTime } = require("../helpers/timingHelpers");
-const resultsCollector = require("../helpers/resultsCollector");
+const { cleanupTestData } = require("../cleanupHelpers");
+const { createTestProduct } = require("../products/productHelpers");
+const { createTestChat } = require("../chat/chatHelpers");
+const { measureTime } = require("./timingHelpers");
+const resultsCollector = require("./resultsCollector");
 
 describe("End-to-End: Dispute Resolution & Audit Trail", () => {
   let users;

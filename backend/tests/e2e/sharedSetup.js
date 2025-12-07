@@ -4,7 +4,7 @@
  * creates test users (buyer, seller, admin) that can be shared across tests
  */
 
-const { createAuthUserAndGetToken } = require("../helpers/authHelpers");
+const { createAuthUserAndGetToken } = require("../auth/authHelpers");
 
 /**
  * setup test users for E2E tests
@@ -42,7 +42,7 @@ async function setupE2EUsers() {
  * @param {string} users.adminUid - admin user ID
  */
 async function cleanupE2EUsers(users) {
-  const { cleanupTestData } = require("../helpers/cleanupHelpers");
+  const { cleanupTestData } = require("../cleanupHelpers");
 
   await cleanupTestData({
     buyerUid: users.buyerUid,

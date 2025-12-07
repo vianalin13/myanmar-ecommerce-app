@@ -3,7 +3,7 @@
  * Shared functions for creating test chats
  */
 
-const { firestore, admin } = require("./testSetup");
+const { firestore, admin } = require("../testSetup");
 const { FieldValue } = require("firebase-admin/firestore");
 
 /**

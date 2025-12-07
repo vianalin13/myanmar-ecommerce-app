@@ -11,11 +11,11 @@
  */
 
 const request = require("supertest");
-const { firestore, BASE_URL } = require("./helpers/testSetup");
-const { createAuthUserAndGetToken } = require("./helpers/authHelpers");
-const { cleanupTestData } = require("./helpers/cleanupHelpers");
-const { createTestProduct } = require("./helpers/productHelpers");
-const { createTestOrder } = require("./helpers/orderHelpers");
+const { firestore, BASE_URL } = require("../testSetup");
+const { createAuthUserAndGetToken } = require("../auth/authHelpers");
+const { cleanupTestData } = require("../cleanupHelpers");
+const { createTestProduct } = require("../products/productHelpers");
+const { createTestOrder } = require("./orderHelpers");
 
 // ============================================================================
 // SIMULATE PAYMENT TESTS

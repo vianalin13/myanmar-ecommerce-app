@@ -4,7 +4,7 @@
  */
 
 const request = require("supertest");
-const { firestore, BASE_URL } = require("./testSetup");
+const { firestore, BASE_URL } = require("../testSetup");
 const admin = require("firebase-admin");
 
 /**

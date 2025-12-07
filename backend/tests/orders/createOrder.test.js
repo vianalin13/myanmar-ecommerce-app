@@ -10,11 +10,11 @@
  */
 
 const request = require("supertest");
-const { firestore, BASE_URL } = require("./helpers/testSetup");
-const { createAuthUserAndGetToken } = require("./helpers/authHelpers");
-const { cleanupTestData } = require("./helpers/cleanupHelpers");
-const { createTestProduct } = require("./helpers/productHelpers");
-const { createTestChat } = require("./helpers/chatHelpers");
+const { firestore, BASE_URL } = require("../testSetup");
+const { createAuthUserAndGetToken } = require("../auth/authHelpers");
+const { cleanupTestData } = require("../cleanupHelpers");
+const { createTestProduct } = require("../products/productHelpers");
+const { createTestChat } = require("../chat/chatHelpers");
 
 // ============================================================================
 // CREATE ORDER TESTS

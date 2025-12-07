@@ -4,7 +4,7 @@
  */
 
 const request = require("supertest");
-const { BASE_URL } = require("./testSetup");
+const { BASE_URL } = require("../testSetup");
 
 /**
  * create test product

@@ -5,7 +5,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const resultsCollector = require("./resultsCollector");
+const resultsCollector = require("../e2e/resultsCollector");
 
 /**
  * export results to JSON file
