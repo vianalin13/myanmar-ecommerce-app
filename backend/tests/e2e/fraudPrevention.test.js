@@ -64,6 +64,9 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
   }, 30000);
 
   test("Prevent delivery without proof of delivery", async () => {
+    const flowSteps = [];
+    const securityCheckpoints = [];
+
     //create order and confirm payment
     const orderId = await measureTime(async () => {
       const res = await request(BASE_URL)
@@ -80,29 +83,54 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
           },
         });
       orderIds.push(res.body.orderId);
+      securityCheckpoints.push("order_created");
       return res.body.orderId;
     }, "create_order");
+    flowSteps.push(orderId);
+    resultsCollector.recordApiTiming("createOrder", orderId.duration);
+    resultsCollector.recordSecurityCheckpoint("order_created", orderId.result);
 
     //confirm payment
-    await request(BASE_URL)
-      .post("/simulatePayment")
-      .set("Authorization", `Bearer ${users.buyerToken}`)
-      .send({ orderId: orderId.result });
+    const paymentResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .post("/simulatePayment")
+        .set("Authorization", `Bearer ${users.buyerToken}`)
+        .send({ orderId: orderId.result });
+      securityCheckpoints.push("payment_confirmed");
+      securityCheckpoints.push("escrow_activated");
+      return res;
+    }, "confirm_payment");
+    flowSteps.push(paymentResult);
+    resultsCollector.recordApiTiming("simulatePayment", paymentResult.duration);
+    resultsCollector.recordSecurityCheckpoint("payment_confirmed", orderId.result);
+    resultsCollector.recordSecurityCheckpoint("escrow_activated", orderId.result);
 
     //confirm and ship order
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({ orderId: orderId.result, status: "confirmed" });
+    const confirmResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({ orderId: orderId.result, status: "confirmed" });
+      return res;
+    }, "confirm_order");
+    flowSteps.push(confirmResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", confirmResult.duration);
 
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({
-        orderId: orderId.result,
-        status: "shipped",
-        trackingNumber: "TRACK001",
-      });
+    const shipResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({
+          orderId: orderId.result,
+          status: "shipped",
+          trackingNumber: "TRACK001",
+        });
+      securityCheckpoints.push("tracking_number_required");
+      return res;
+    }, "ship_order");
+    flowSteps.push(shipResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", shipResult.duration);
+    resultsCollector.recordSecurityCheckpoint("tracking_number_required", orderId.result);
 
     //attempt to mark delivered without proof (should fail)
     const fraudAttempt = await measureTime(async () => {
@@ -116,6 +144,8 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
         });
       return res;
     }, "fraud_attempt_no_proof");
+    flowSteps.push(fraudAttempt);
+    securityCheckpoints.push("proof_of_delivery_required");
 
     //verify fraud was blocked
     expect(fraudAttempt.result.statusCode).toBe(400);
@@ -127,9 +157,29 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
       "Proof of delivery required for delivered status"
     );
     resultsCollector.recordApiTiming("updateOrderStatus", fraudAttempt.duration);
+    resultsCollector.recordSecurityCheckpoint("proof_of_delivery_required", orderId.result);
+
+    //record complete flow
+    const totalDuration = flowSteps.reduce((sum, step) => sum + step.duration, 0);
+    const apiCallCount = flowSteps.length;
+    resultsCollector.recordFlow({
+      scenarioName: "Prevent Delivery Without Proof of Delivery",
+      flowType: "fraud_prevention",
+      totalDuration,
+      steps: flowSteps.map(step => ({
+        operation: step.operationName,
+        duration: step.duration,
+      })),
+      apiCallCount,
+      securityCheckpointsHit: securityCheckpoints.length,
+      success: true, // Flow succeeded in blocking fraud
+    });
   }, 30000);
 
   test("Prevent shipping without tracking number", async () => {
+    const flowSteps = [];
+    const securityCheckpoints = [];
+
     const orderId = await measureTime(async () => {
       const res = await request(BASE_URL)
         .post("/createOrder")
@@ -145,13 +195,22 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
           },
         });
       orderIds.push(res.body.orderId);
+      securityCheckpoints.push("order_created");
       return res.body.orderId;
     }, "create_order");
+    flowSteps.push(orderId);
+    resultsCollector.recordApiTiming("createOrder", orderId.duration);
+    resultsCollector.recordSecurityCheckpoint("order_created", orderId.result);
 
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({ orderId: orderId.result, status: "confirmed" });
+    const confirmResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({ orderId: orderId.result, status: "confirmed" });
+      return res;
+    }, "confirm_order");
+    flowSteps.push(confirmResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", confirmResult.duration);
 
     //attempt to ship without tracking number (should fail)
     const fraudAttempt = await measureTime(async () => {
@@ -165,6 +224,8 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
         });
       return res;
     }, "fraud_attempt_no_tracking");
+    flowSteps.push(fraudAttempt);
+    securityCheckpoints.push("tracking_number_required");
 
     expect(fraudAttempt.result.statusCode).toBe(400);
     expect(fraudAttempt.result.body.error.toLowerCase()).toContain("tracking number");
@@ -174,9 +235,30 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
       true,
       "Tracking number required for shipped status"
     );
+    resultsCollector.recordApiTiming("updateOrderStatus", fraudAttempt.duration);
+    resultsCollector.recordSecurityCheckpoint("tracking_number_required", orderId.result);
+
+    //record complete flow
+    const totalDuration = flowSteps.reduce((sum, step) => sum + step.duration, 0);
+    const apiCallCount = flowSteps.length;
+    resultsCollector.recordFlow({
+      scenarioName: "Prevent Shipping Without Tracking Number",
+      flowType: "fraud_prevention",
+      totalDuration,
+      steps: flowSteps.map(step => ({
+        operation: step.operationName,
+        duration: step.duration,
+      })),
+      apiCallCount,
+      securityCheckpointsHit: securityCheckpoints.length,
+      success: true, // Flow succeeded in blocking fraud
+    });
   }, 30000);
 
   test("Prevent overselling with concurrent orders (atomic transactions)", async () => {
+    const flowSteps = [];
+    const securityCheckpoints = [];
+
     //create product with limited stock
     const limitedProductId = await createTestProduct(users.sellerToken, {
       name: "Limited Stock Product",
@@ -208,6 +290,7 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
           });
         if (res.statusCode === 200) {
           orderIds.push(res.body.orderId);
+          securityCheckpoints.push("order_created");
         }
         return res;
       }, "concurrent_order_1"),
@@ -227,6 +310,7 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
           });
         if (res.statusCode === 200) {
           orderIds.push(res.body.orderId);
+          securityCheckpoints.push("order_created");
         }
         return res;
       }, "concurrent_order_2"),
@@ -243,6 +327,20 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
     expect(successCount).toBe(1);
     expect(failureCount).toBe(1);
 
+    //add both concurrent order attempts to flow steps
+    concurrentOrders.forEach((order, index) => {
+      if (order.status === "fulfilled") {
+        flowSteps.push(order.value);
+        resultsCollector.recordApiTiming("createOrder", order.value.duration);
+        if (order.value.result.statusCode === 200) {
+          resultsCollector.recordSecurityCheckpoint("order_created", order.value.result.body.orderId);
+        }
+      }
+    });
+
+    securityCheckpoints.push("atomic_transaction_validation");
+    resultsCollector.recordSecurityCheckpoint("atomic_transaction_validation", limitedProductId);
+
     resultsCollector.recordFraudPrevention(
       "concurrent_overselling",
       true,
@@ -254,6 +352,22 @@ describe("End-to-End: Fraud Prevention Mechanisms", () => {
       failureCount: 1,
       averageDuration: (concurrentOrders[0].value.duration + concurrentOrders[1].value.duration) / 2,
       testType: "concurrent_order_creation",
+    });
+
+    //record complete flow
+    const totalDuration = flowSteps.reduce((sum, step) => sum + step.duration, 0);
+    const apiCallCount = flowSteps.length;
+    resultsCollector.recordFlow({
+      scenarioName: "Prevent Overselling with Concurrent Orders",
+      flowType: "fraud_prevention",
+      totalDuration,
+      steps: flowSteps.map(step => ({
+        operation: step.operationName,
+        duration: step.duration,
+      })),
+      apiCallCount,
+      securityCheckpointsHit: securityCheckpoints.length,
+      success: true, // Flow succeeded in preventing overselling
     });
 
     //cleanup buyer2

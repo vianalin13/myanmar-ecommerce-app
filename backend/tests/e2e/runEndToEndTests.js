@@ -5,9 +5,9 @@
  * script to run all end-to-end tests and export results
  * 
  * usage:
- *   node e2e_flows/runEndToEndTests.js
- *   node e2e_flows/runEndToEndTests.js --export
- *   node e2e_flows/runEndToEndTests.js --export --output ./custom-output-dir
+ *   node e2e/runEndToEndTests.js
+ *   node e2e/runEndToEndTests.js --export
+ *   node e2e/runEndToEndTests.js --export --output ./custom-output-dir
  */
 
 const { spawn } = require("child_process");
@@ -39,11 +39,11 @@ if (fs.existsSync(lockFile)) {
 
 //explicitly list E2E test files (only these will run)
 const e2eTestFiles = [
-  "tests/e2e_flows/happyPath.test.js",
-  "tests/e2e_flows/fraudPrevention.test.js",
-  "tests/e2e_flows/disputeResolution.test.js",
-  "tests/e2e_flows/transparency.test.js",
-  "tests/e2e_flows/concurrentPerformance.test.js",
+  "tests/e2e/happyPath.test.js",
+  "tests/e2e/fraudPrevention.test.js",
+  "tests/e2e/disputeResolution.test.js",
+  "tests/e2e/transparency.test.js",
+  "tests/e2e/concurrentPerformance.test.js",
 ];
 
 //set environment variables for Jest teardown
@@ -90,7 +90,7 @@ jestProcess.on("close", (code) => {
   } else {
     console.log("");
     console.log("Tip: Run with --export flag to export results to files");
-    console.log("Example: node e2e_flows/runEndToEndTests.js --export");
+    console.log("Example: node e2e/runEndToEndTests.js --export");
   }
   
   console.log("=".repeat(80));

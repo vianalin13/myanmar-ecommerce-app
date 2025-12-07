@@ -57,7 +57,8 @@ describe("End-to-End: Transparency Demonstration", () => {
   }, 30000);
 
   test("Complete transaction transparency - all events logged and retrievable", async () => {
-    const transactionSteps = [];
+    const flowSteps = [];
+    const securityCheckpoints = [];
     const loggedEvents = [];
 
     //step 1: browse products
@@ -67,7 +68,8 @@ describe("End-to-End: Transparency Demonstration", () => {
       expect(res.statusCode).toBe(200);
       return res.body.products;
     }, "browse_products");
-    transactionSteps.push({ step: "Browse Products", duration: browseResult.duration });
+    flowSteps.push(browseResult);
+    resultsCollector.recordApiTiming("getPublicProducts", browseResult.duration);
 
     //step 2: start chat
     const chatId = await createTestChat(users.buyerUid, users.sellerUid, productId);
@@ -83,25 +85,36 @@ describe("End-to-End: Transparency Demonstration", () => {
       expect(res.statusCode).toBe(200);
       return res.body;
     }, "start_chat");
-    transactionSteps.push({ step: "Start Chat", duration: chatResult.duration });
+    flowSteps.push(chatResult);
+    resultsCollector.recordApiTiming("startChat", chatResult.duration);
 
     //step 3: exchange messages
-    await request(BASE_URL)
-      .post("/sendMessage")
-      .set("Authorization", `Bearer ${users.buyerToken}`)
-      .send({
-        chatId: chatId,
-        text: "Is this available?",
-        productId: productId,
-      });
-    await request(BASE_URL)
-      .post("/sendMessage")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({
-        chatId: chatId,
-        text: "Yes, available!",
-      });
-    transactionSteps.push({ step: "Exchange Messages", duration: 0 });
+    const message1Result = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .post("/sendMessage")
+        .set("Authorization", `Bearer ${users.buyerToken}`)
+        .send({
+          chatId: chatId,
+          text: "Is this available?",
+          productId: productId,
+        });
+      return res;
+    }, "send_message_buyer");
+    flowSteps.push(message1Result);
+    resultsCollector.recordApiTiming("sendMessage", message1Result.duration);
+
+    const message2Result = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .post("/sendMessage")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({
+          chatId: chatId,
+          text: "Yes, available!",
+        });
+      return res;
+    }, "send_message_seller");
+    flowSteps.push(message2Result);
+    resultsCollector.recordApiTiming("sendMessage", message2Result.duration);
 
     //step 4: create order
     const orderId = await measureTime(async () => {
@@ -122,9 +135,12 @@ describe("End-to-End: Transparency Demonstration", () => {
       expect(res.statusCode).toBe(200);
       orderIds.push(res.body.orderId);
       loggedEvents.push("order_created");
+      securityCheckpoints.push("order_created");
       return res.body.orderId;
     }, "create_order");
-    transactionSteps.push({ step: "Create Order", duration: orderId.duration });
+    flowSteps.push(orderId);
+    resultsCollector.recordApiTiming("createOrder", orderId.duration);
+    resultsCollector.recordSecurityCheckpoint("order_created", orderId.result);
 
     //step 5: confirm payment
     const paymentResult = await measureTime(async () => {
@@ -137,41 +153,67 @@ describe("End-to-End: Transparency Demonstration", () => {
         });
       expect(res.statusCode).toBe(200);
       loggedEvents.push("payment_confirmed");
+      securityCheckpoints.push("payment_confirmed");
+      securityCheckpoints.push("escrow_activated");
       return res.body;
     }, "confirm_payment");
-    transactionSteps.push({ step: "Confirm Payment", duration: paymentResult.duration });
+    flowSteps.push(paymentResult);
+    resultsCollector.recordApiTiming("simulatePayment", paymentResult.duration);
+    resultsCollector.recordSecurityCheckpoint("payment_confirmed", orderId.result);
+    resultsCollector.recordSecurityCheckpoint("escrow_activated", orderId.result);
 
     //step 6: seller confirms order
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({ orderId: orderId.result, status: "confirmed" });
-    loggedEvents.push("status_updated");
+    const confirmResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({ orderId: orderId.result, status: "confirmed" });
+      loggedEvents.push("status_updated");
+      return res;
+    }, "confirm_order");
+    flowSteps.push(confirmResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", confirmResult.duration);
 
     //step 7: seller ships order
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({
-        orderId: orderId.result,
-        status: "shipped",
-        trackingNumber: "TRACK_TRANSPARENCY_001",
-      });
-    loggedEvents.push("status_updated");
-    loggedEvents.push("tracking_number_added");
+    const shipResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({
+          orderId: orderId.result,
+          status: "shipped",
+          trackingNumber: "TRACK_TRANSPARENCY_001",
+        });
+      loggedEvents.push("status_updated");
+      loggedEvents.push("tracking_number_added");
+      securityCheckpoints.push("tracking_number_required");
+      return res;
+    }, "ship_order");
+    flowSteps.push(shipResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", shipResult.duration);
+    resultsCollector.recordSecurityCheckpoint("tracking_number_required", orderId.result);
 
     //step 8: seller marks delivered
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({
-        orderId: orderId.result,
-        status: "delivered",
-        proofOfDelivery: { otpCode: "123456" },
-      });
-    loggedEvents.push("status_updated");
-    loggedEvents.push("delivery_proof_submitted");
-    loggedEvents.push("escrow_released");
+    const deliverResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({
+          orderId: orderId.result,
+          status: "delivered",
+          proofOfDelivery: { otpCode: "123456" },
+        });
+      loggedEvents.push("status_updated");
+      loggedEvents.push("delivery_proof_submitted");
+      loggedEvents.push("escrow_released");
+      securityCheckpoints.push("proof_of_delivery_required");
+      securityCheckpoints.push("escrow_auto_released");
+      return res;
+    }, "mark_delivered");
+    flowSteps.push(deliverResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", deliverResult.duration);
+    resultsCollector.recordSecurityCheckpoint("proof_of_delivery_required", orderId.result);
+    resultsCollector.recordSecurityCheckpoint("escrow_auto_released", orderId.result);
 
     //small delay to ensure all events are logged
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -185,7 +227,7 @@ describe("End-to-End: Transparency Demonstration", () => {
       expect(res.body.logs).toBeDefined();
       return res.body;
     }, "get_audit_trail");
-
+    flowSteps.push(auditTrailResult);
     resultsCollector.recordApiTiming("getOrderLogs", auditTrailResult.duration);
 
     //analyze audit trail completeness
@@ -203,10 +245,26 @@ describe("End-to-End: Transparency Demonstration", () => {
     expect(eventTypes).toContain("escrow_released");
 
     //calculate transparency metrics
-    const totalTransactionSteps = transactionSteps.length;
+    const totalTransactionSteps = flowSteps.length;
     const totalEventsLogged = logs.length;
     const uniqueEventTypesCount = uniqueEventTypes.length;
     const transparencyPercentage = (totalEventsLogged / totalTransactionSteps) * 100;
+
+    //record complete flow
+    const totalDuration = flowSteps.reduce((sum, step) => sum + step.duration, 0);
+    const apiCallCount = flowSteps.length;
+    resultsCollector.recordFlow({
+      scenarioName: "Complete Transaction Transparency - All Events Logged",
+      flowType: "transparency",
+      totalDuration,
+      steps: flowSteps.map(step => ({
+        operation: step.operationName,
+        duration: step.duration,
+      })),
+      apiCallCount,
+      securityCheckpointsHit: securityCheckpoints.length,
+      success: true,
+    });
 
     //record transparency metrics
     resultsCollector.recordTransparencyMetrics({
@@ -216,7 +274,7 @@ describe("End-to-End: Transparency Demonstration", () => {
       uniqueEventTypesCount,
       transparencyPercentage,
       eventTypes: uniqueEventTypes,
-      transactionDuration: transactionSteps.reduce((sum, step) => sum + step.duration, 0),
+      transactionDuration: totalDuration,
     });
 
     //compare with Facebook/WeChat (theoretical - 0 events logged)
@@ -245,6 +303,9 @@ describe("End-to-End: Transparency Demonstration", () => {
   }, 30000);
 
   test("Audit trail completeness measurement", async () => {
+    const flowSteps = [];
+    const securityCheckpoints = [];
+
     //create a complete order flow
     const chatId = await createTestChat(users.buyerUid, users.sellerUid, productId);
     chatIds.push(chatId);
@@ -265,40 +326,74 @@ describe("End-to-End: Transparency Demonstration", () => {
           chatId: chatId,
         });
       orderIds.push(res.body.orderId);
+      securityCheckpoints.push("order_created");
       return res.body.orderId;
     }, "create_order");
+    flowSteps.push(orderId);
+    resultsCollector.recordApiTiming("createOrder", orderId.duration);
+    resultsCollector.recordSecurityCheckpoint("order_created", orderId.result);
 
     //complete order flow
-    await request(BASE_URL)
-      .post("/simulatePayment")
-      .set("Authorization", `Bearer ${users.buyerToken}`)
-      .send({
-        orderId: orderId.result,
-        transactionId: "TXN_COMPLETE_001",
-      });
+    const paymentResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .post("/simulatePayment")
+        .set("Authorization", `Bearer ${users.buyerToken}`)
+        .send({
+          orderId: orderId.result,
+          transactionId: "TXN_COMPLETE_001",
+        });
+      securityCheckpoints.push("payment_confirmed");
+      securityCheckpoints.push("escrow_activated");
+      return res;
+    }, "confirm_payment");
+    flowSteps.push(paymentResult);
+    resultsCollector.recordApiTiming("simulatePayment", paymentResult.duration);
+    resultsCollector.recordSecurityCheckpoint("payment_confirmed", orderId.result);
+    resultsCollector.recordSecurityCheckpoint("escrow_activated", orderId.result);
 
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({ orderId: orderId.result, status: "confirmed" });
+    const confirmResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({ orderId: orderId.result, status: "confirmed" });
+      return res;
+    }, "confirm_order");
+    flowSteps.push(confirmResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", confirmResult.duration);
 
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({
-        orderId: orderId.result,
-        status: "shipped",
-        trackingNumber: "TRACK_COMPLETE_001",
-      });
+    const shipResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({
+          orderId: orderId.result,
+          status: "shipped",
+          trackingNumber: "TRACK_COMPLETE_001",
+        });
+      securityCheckpoints.push("tracking_number_required");
+      return res;
+    }, "ship_order");
+    flowSteps.push(shipResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", shipResult.duration);
+    resultsCollector.recordSecurityCheckpoint("tracking_number_required", orderId.result);
 
-    await request(BASE_URL)
-      .patch("/updateOrderStatus")
-      .set("Authorization", `Bearer ${users.sellerToken}`)
-      .send({
-        orderId: orderId.result,
-        status: "delivered",
-        proofOfDelivery: { otpCode: "654321" },
-      });
+    const deliverResult = await measureTime(async () => {
+      const res = await request(BASE_URL)
+        .patch("/updateOrderStatus")
+        .set("Authorization", `Bearer ${users.sellerToken}`)
+        .send({
+          orderId: orderId.result,
+          status: "delivered",
+          proofOfDelivery: { otpCode: "654321" },
+        });
+      securityCheckpoints.push("proof_of_delivery_required");
+      securityCheckpoints.push("escrow_auto_released");
+      return res;
+    }, "mark_delivered");
+    flowSteps.push(deliverResult);
+    resultsCollector.recordApiTiming("updateOrderStatus", deliverResult.duration);
+    resultsCollector.recordSecurityCheckpoint("proof_of_delivery_required", orderId.result);
+    resultsCollector.recordSecurityCheckpoint("escrow_auto_released", orderId.result);
 
     //wait for all events to be logged
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -311,6 +406,8 @@ describe("End-to-End: Transparency Demonstration", () => {
       expect(res.statusCode).toBe(200);
       return res.body;
     }, "get_audit_trail");
+    flowSteps.push(auditTrailResult);
+    resultsCollector.recordApiTiming("getOrderLogs", auditTrailResult.duration);
 
     const logs = auditTrailResult.result.logs;
     const eventTypes = logs.map(log => log.eventType);
@@ -346,6 +443,22 @@ describe("End-to-End: Transparency Demonstration", () => {
     console.log(`\nMissing Events:`);
     expectedEvents.filter(e => !foundEvents.includes(e)).forEach(event => {
       console.log(`  ✗ ${event}`);
+    });
+
+    //record complete flow
+    const totalDuration = flowSteps.reduce((sum, step) => sum + step.duration, 0);
+    const apiCallCount = flowSteps.length;
+    resultsCollector.recordFlow({
+      scenarioName: "Audit Trail Completeness Measurement",
+      flowType: "transparency",
+      totalDuration,
+      steps: flowSteps.map(step => ({
+        operation: step.operationName,
+        duration: step.duration,
+      })),
+      apiCallCount,
+      securityCheckpointsHit: securityCheckpoints.length,
+      success: true,
     });
 
     //verify high completeness

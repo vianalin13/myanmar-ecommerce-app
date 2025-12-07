@@ -1,6 +1,6 @@
 /**
  * PRODUCTS MODULE
- * Exports all product management functions.
+ * exports all product management functions.
  */
 
 module.exports = {
