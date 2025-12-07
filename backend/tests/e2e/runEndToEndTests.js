@@ -13,7 +13,7 @@
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const resultsCollector = require("./resultsCollector");
+const resultsCollector = require("../resultsCollector");
 
 //parse command line arguments
 const args = process.argv.slice(2);
@@ -53,16 +53,13 @@ const env = {
   E2E_OUTPUT_DIR: outputDir,
 };
 
-//use Jest config file to avoid path issues
-const backendDir = path.join(__dirname, "../..");
-const jestConfigPath = path.relative(backendDir, path.join(__dirname, "jest.config.js"))
-  .replace(/\\/g, "/"); //convert backslashes to forward slashes
-
 //run Jest tests on only the E2E test files
+//root jest.config.js will be used automatically and will include reporter if E2E_EXPORT_RESULTS is set
+const backendDir = path.join(__dirname, "../..");
+
 const jestProcess = spawn("npx", [
   "jest",
   ...e2eTestFiles,
-  "--config", jestConfigPath, //use Jest config file
   "--verbose",
   "--forceExit",
   "--runInBand", //run tests serially to avoid conflicts

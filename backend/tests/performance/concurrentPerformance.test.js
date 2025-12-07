@@ -14,7 +14,7 @@ const { cleanupTestData } = require("../cleanupHelpers");
 const { createTestProduct } = require("../products/productHelpers");
 const { createTestChat } = require("../chat/chatHelpers");
 const { measureMultipleOperations } = require("../e2e/timingHelpers");
-const resultsCollector = require("../e2e/resultsCollector");
+const resultsCollector = require("../resultsCollector");
 
 describe("End-to-End: Concurrent User Performance", () => {
   let users;

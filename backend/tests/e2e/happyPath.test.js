@@ -20,7 +20,7 @@ const { setupE2EUsers, cleanupE2EUsers } = require("./sharedSetup");
 const { cleanupTestData } = require("../cleanupHelpers");
 const { createTestProduct } = require("../products/productHelpers");
 const { measureTime } = require("./timingHelpers");
-const resultsCollector = require("./resultsCollector");
+const resultsCollector = require("../resultsCollector");
 
 describe("End-to-End: Complete Purchase Flow (Happy Path)", () => {
   let users;

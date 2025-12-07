@@ -16,7 +16,7 @@ const { setupE2EUsers, cleanupE2EUsers } = require("./sharedSetup");
 const { cleanupTestData } = require("../cleanupHelpers");
 const { createTestProduct } = require("../products/productHelpers");
 const { measureTime } = require("./timingHelpers");
-const resultsCollector = require("./resultsCollector");
+const resultsCollector = require("../resultsCollector");
 const { createAuthUserAndGetToken } = require("../auth/authHelpers");
 
 describe("End-to-End: Fraud Prevention Mechanisms", () => {

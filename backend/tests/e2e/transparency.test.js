@@ -18,7 +18,7 @@ const { cleanupTestData } = require("../cleanupHelpers");
 const { createTestProduct } = require("../products/productHelpers");
 const { createTestChat } = require("../chat/chatHelpers");
 const { measureTime } = require("./timingHelpers");
-const resultsCollector = require("./resultsCollector");
+const resultsCollector = require("../resultsCollector");
 
 describe("End-to-End: Transparency Demonstration", () => {
   let users;

@@ -11,8 +11,8 @@
 
 const { execSync } = require("child_process");
 const path = require("path");
-const resultsCollector = require("../e2e/resultsCollector");
-const resultsExporter = require("../e2e/resultsExporter");
+const resultsCollector = require("../resultsCollector");
+const resultsExporter = require("../resultsExporter");
 
 console.log("=".repeat(80));
 console.log("PERFORMANCE TEST SUITE");

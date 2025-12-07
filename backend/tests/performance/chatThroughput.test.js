@@ -15,7 +15,7 @@ const { cleanupTestData } = require("../cleanupHelpers");
 const { createTestProduct } = require("../products/productHelpers");
 const { createTestChat } = require("../chat/chatHelpers");
 const { measureTime, measureMultipleOperations } = require("../e2e/timingHelpers");
-const resultsCollector = require("../e2e/resultsCollector");
+const resultsCollector = require("../resultsCollector");
 
 describe("Chat Message Throughput Tests", () => {
   let buyerUid;

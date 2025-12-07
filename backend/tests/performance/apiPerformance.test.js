@@ -20,7 +20,7 @@ const { createTestProduct } = require("../products/productHelpers");
 const { createTestChat } = require("../chat/chatHelpers");
 const { createTestOrder } = require("../orders/orderHelpers");
 const { measureTime } = require("../e2e/timingHelpers");
-const resultsCollector = require("../e2e/resultsCollector");
+const resultsCollector = require("../resultsCollector");
 
 describe("API Performance Tests", () => {
   let buyerUid;
