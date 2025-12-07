@@ -13,7 +13,6 @@
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const { exportAllResults } = require("../helpers/resultsExporter");
 const resultsCollector = require("../helpers/resultsCollector");
 
 //parse command line arguments

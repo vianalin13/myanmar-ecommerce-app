@@ -13,7 +13,7 @@ const { BASE_URL } = require("../helpers/testSetup");
 const { setupE2EUsers, cleanupE2EUsers } = require("./sharedSetup");
 const { cleanupTestData } = require("../helpers/cleanupHelpers");
 const { createTestProduct } = require("../helpers/productHelpers");
-const { measureTime, measureMultipleOperations } = require("../helpers/timingHelpers");
+const { measureTime } = require("../helpers/timingHelpers");
 const resultsCollector = require("../helpers/resultsCollector");
 const { createAuthUserAndGetToken } = require("../helpers/authHelpers");
 

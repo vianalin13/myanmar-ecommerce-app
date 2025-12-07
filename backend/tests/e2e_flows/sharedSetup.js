@@ -42,7 +42,6 @@ async function setupE2EUsers() {
  * @param {string} users.adminUid - admin user ID
  */
 async function cleanupE2EUsers(users) {
-  const { deleteAuthUser } = require("../helpers/authHelpers");
   const { cleanupTestData } = require("../helpers/cleanupHelpers");
 
   await cleanupTestData({
