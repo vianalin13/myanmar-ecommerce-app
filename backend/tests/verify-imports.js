@@ -31,7 +31,6 @@ const testFiles = [
   "./e2e/fraudPrevention.test.js",
   "./e2e/disputeResolution.test.js",
   "./e2e/transparency.test.js",
-  "./e2e/concurrentPerformance.test.js",
 ];
 
 /**

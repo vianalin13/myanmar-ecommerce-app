@@ -15,7 +15,7 @@ class ResultsReporter {
     this.globalConfig = globalConfig;
     this.options = options;
     this.shouldExport = process.env.E2E_EXPORT_RESULTS === "true";
-    this.outputDir = process.env.E2E_OUTPUT_DIR || path.join(__dirname, "../../test-results");
+    this.outputDir = process.env.E2E_OUTPUT_DIR || path.join(__dirname, "../../test-results/e2e");
   }
 
   onRunComplete(contexts, results) {

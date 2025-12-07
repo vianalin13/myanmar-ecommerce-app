@@ -5,7 +5,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const resultsCollector = require("../e2e/resultsCollector");
+const resultsCollector = require("./resultsCollector");
 
 /**
  * export results to JSON file
@@ -116,6 +116,66 @@ function exportFraudPreventionToCSV(outputPath) {
 }
 
 /**
+ * export throughput stats to CSV
+ * 
+ * @param {string} outputPath - path to output CSV file
+ */
+function exportThroughputToCSV(outputPath) {
+  const stats = resultsCollector.getThroughputStats();
+  const rows = [];
+  
+  //header
+  rows.push("Operation Type,Count,Average (ops/sec),Min (ops/sec),Max (ops/sec)");
+  
+  //data rows
+  Object.keys(stats).forEach(operationType => {
+    const stat = stats[operationType];
+    rows.push(
+      `${operationType},${stat.count},${stat.average},${stat.min},${stat.max}`
+    );
+  });
+  
+  //ensure directory exists
+  const dir = path.dirname(outputPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  
+  fs.writeFileSync(outputPath, rows.join("\n"), "utf8");
+  console.log(`Throughput stats exported to: ${outputPath}`);
+}
+
+/**
+ * export order processing latency to CSV
+ * 
+ * @param {string} outputPath - path to output CSV file
+ */
+function exportOrderProcessingLatencyToCSV(outputPath) {
+  const results = resultsCollector.getAllResults();
+  const rows = [];
+  
+  //header
+  rows.push("Order ID,Total Latency (ms),Order Creation (ms),Payment Confirmation (ms),Order Confirmation (ms),Shipping (ms),Delivery (ms)");
+  
+  //get raw data
+  results.orderProcessingLatency.forEach(record => {
+    const steps = record.stepTimings || {};
+    rows.push(
+      `${record.orderId},${record.totalLatency},${steps.orderCreation || ""},${steps.paymentConfirmation || ""},${steps.orderConfirmation || ""},${steps.shipping || ""},${steps.delivery || ""}`
+    );
+  });
+  
+  //ensure directory exists
+  const dir = path.dirname(outputPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  
+  fs.writeFileSync(outputPath, rows.join("\n"), "utf8");
+  console.log(`Order processing latency exported to: ${outputPath}`);
+}
+
+/**
  *generate summary report
  * 
  * @param {string} outputPath - path to output text file
@@ -215,6 +275,44 @@ function generateSummaryReport(outputPath) {
   } else {
     lines.push("No concurrent test results recorded.");
   }
+  lines.push("");
+  
+  //throughput summary
+  lines.push("THROUGHPUT METRICS:");
+  lines.push("-".repeat(80));
+  const throughputStats = resultsCollector.getThroughputStats();
+  if (Object.keys(throughputStats).length > 0) {
+    Object.keys(throughputStats).forEach(operationType => {
+      const stat = throughputStats[operationType];
+      lines.push(`${operationType}:`);
+      lines.push(`  Count: ${stat.count}`);
+      lines.push(`  Average: ${stat.average} ${stat.unit}`);
+      lines.push(`  Min: ${stat.min} ${stat.unit}`);
+      lines.push(`  Max: ${stat.max} ${stat.unit}`);
+      lines.push("");
+    });
+  } else {
+    lines.push("No throughput results recorded.");
+  }
+  lines.push("");
+  
+  //order processing latency summary
+  lines.push("ORDER PROCESSING LATENCY:");
+  lines.push("-".repeat(80));
+  const latencyStats = resultsCollector.getOrderProcessingLatencyStats();
+  if (latencyStats.count > 0) {
+    lines.push(`Orders Tested: ${latencyStats.count}`);
+    lines.push(`Average Total Latency: ${latencyStats.averageTotalLatency}${latencyStats.unit}`);
+    if (Object.keys(latencyStats.averageStepTimings).length > 0) {
+      lines.push("Average Step Timings:");
+      Object.keys(latencyStats.averageStepTimings).forEach(step => {
+        lines.push(`  ${step}: ${latencyStats.averageStepTimings[step]}${latencyStats.unit}`);
+      });
+    }
+  } else {
+    lines.push("No order processing latency results recorded.");
+  }
+  lines.push("");
   
   lines.push("=".repeat(80));
   
@@ -248,6 +346,8 @@ function exportAllResults(outputDir = "./test-results") {
   exportApiTimingsToCSV(path.join(runOutputDir, "api-timings.csv"));
   exportFlowsToCSV(path.join(runOutputDir, "flows.csv"));
   exportFraudPreventionToCSV(path.join(runOutputDir, "fraud-prevention.csv"));
+  exportThroughputToCSV(path.join(runOutputDir, "throughput.csv"));
+  exportOrderProcessingLatencyToCSV(path.join(runOutputDir, "order-processing-latency.csv"));
   generateSummaryReport(path.join(runOutputDir, "summary.txt"));
   
   console.log(`\nAll results exported to: ${runOutputDir}`);
@@ -259,6 +359,8 @@ module.exports = {
   exportApiTimingsToCSV,
   exportFlowsToCSV,
   exportFraudPreventionToCSV,
+  exportThroughputToCSV,
+  exportOrderProcessingLatencyToCSV,
   generateSummaryReport,
   exportAllResults,
 };

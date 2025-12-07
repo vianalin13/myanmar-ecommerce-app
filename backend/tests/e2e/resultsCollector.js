@@ -35,6 +35,8 @@ class ResultsCollector {
       auditTrailCompleteness: [],
       concurrentTests: [],
       transparencyMetrics: [],
+      throughput: [],
+      orderProcessingLatency: [],
     };
   }
 
@@ -77,12 +79,14 @@ class ResultsCollector {
    * @param {string} apiName - name of the API endpoint
    * @param {number} duration - response time in ms
    * @param {boolean} success - whether API call succeeded
+   * @param {string} testType - type of test ("e2e" or "performance")
    */
-  recordApiTiming(apiName, duration, success = true) {
+  recordApiTiming(apiName, duration, success = true, testType = "performance") {
     this.results.apiTimings.push({
       apiName,
       duration,
       success,
+      testType,
       timestamp: new Date().toISOString(),
     });
     this.saveToFile();
@@ -179,14 +183,62 @@ class ResultsCollector {
   }
 
   /**
+   * record throughput metric
+   * 
+   * @param {string} operationType - type of operation (e.g., "concurrent_browse", "message_send")
+   * @param {number} throughput - operations per second
+   * @param {number} successCount - number of successful operations
+   * @param {number} totalDuration - total duration in ms
+   * @param {string} testType - type of test ("e2e" or "performance")
+   */
+  recordThroughput(operationType, throughput, successCount, totalDuration, testType = "performance") {
+    this.results.throughput.push({
+      operationType,
+      throughput,
+      successCount,
+      totalDuration,
+      testType,
+      timestamp: new Date().toISOString(),
+    });
+    this.saveToFile();
+  }
+
+  /**
+   * record order processing latency
+   * 
+   * @param {string} orderId - order ID
+   * @param {number} totalLatency - total time from order creation to delivery in ms
+   * @param {Object} stepTimings - timing for each step
+   * @param {number} stepTimings.orderCreation - time to create order
+   * @param {number} stepTimings.paymentConfirmation - time to confirm payment
+   * @param {number} stepTimings.orderConfirmation - time for seller to confirm
+   * @param {number} stepTimings.shipping - time to ship
+   * @param {number} stepTimings.delivery - time to deliver
+   */
+  recordOrderProcessingLatency(orderId, totalLatency, stepTimings = {}) {
+    this.results.orderProcessingLatency.push({
+      orderId,
+      totalLatency,
+      stepTimings,
+      timestamp: new Date().toISOString(),
+    });
+    this.saveToFile();
+  }
+
+  /**
    * get aggregated API timing statistics
    * 
+   * @param {string} testType - optional filter by test type ("e2e" or "performance")
    * @returns {Object} aggregated statistics by API
    */
-  getApiTimingStats() {
+  getApiTimingStats(testType = null) {
     const apiGroups = {};
     
     this.results.apiTimings.forEach(timing => {
+      // Filter by testType if provided
+      if (testType && timing.testType !== testType) {
+        return;
+      }
       if (!apiGroups[timing.apiName]) {
         apiGroups[timing.apiName] = [];
       }
@@ -253,6 +305,84 @@ class ResultsCollector {
   }
 
   /**
+   * get throughput statistics
+   * 
+   * @returns {Object} aggregated throughput stats by operation type
+   */
+  getThroughputStats() {
+    const throughputGroups = {};
+    
+    this.results.throughput.forEach(record => {
+      if (!throughputGroups[record.operationType]) {
+        throughputGroups[record.operationType] = [];
+      }
+      throughputGroups[record.operationType].push(record.throughput);
+    });
+
+    const stats = {};
+    Object.keys(throughputGroups).forEach(operationType => {
+      const values = throughputGroups[operationType];
+      const sum = values.reduce((a, b) => a + b, 0);
+      const avg = sum / values.length;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+
+      stats[operationType] = {
+        count: values.length,
+        average: Math.round(avg * 100) / 100,
+        min: Math.round(min * 100) / 100,
+        max: Math.round(max * 100) / 100,
+        unit: "ops/second",
+      };
+    });
+
+    return stats;
+  }
+
+  /**
+   * get order processing latency statistics
+   * 
+   * @returns {Object} aggregated latency stats
+   */
+  getOrderProcessingLatencyStats() {
+    if (this.results.orderProcessingLatency.length === 0) {
+      return {
+        count: 0,
+        averageTotalLatency: null,
+        averageStepTimings: {},
+      };
+    }
+
+    const totalLatencies = this.results.orderProcessingLatency.map(r => r.totalLatency);
+    const avgTotal = totalLatencies.reduce((a, b) => a + b, 0) / totalLatencies.length;
+
+    // Aggregate step timings
+    const stepTimingGroups = {};
+    this.results.orderProcessingLatency.forEach(record => {
+      Object.keys(record.stepTimings || {}).forEach(step => {
+        if (!stepTimingGroups[step]) {
+          stepTimingGroups[step] = [];
+        }
+        stepTimingGroups[step].push(record.stepTimings[step]);
+      });
+    });
+
+    const avgStepTimings = {};
+    Object.keys(stepTimingGroups).forEach(step => {
+      const values = stepTimingGroups[step];
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      avgStepTimings[step] = Math.round(avg * 100) / 100;
+    });
+
+    return {
+      count: this.results.orderProcessingLatency.length,
+      averageTotalLatency: Math.round(avgTotal * 100) / 100,
+      averageStepTimings: avgStepTimings,
+      unit: "ms",
+    };
+  }
+
+  /**
    * get all results for export
    * 
    * @returns {Object} all collected results with aggregated statistics
@@ -264,7 +394,11 @@ class ResultsCollector {
       ...this.results,
       aggregated: {
         apiTimings: this.getApiTimingStats(),
+        apiTimingsE2E: this.getApiTimingStats("e2e"),
+        apiTimingsPerformance: this.getApiTimingStats("performance"),
         fraudPrevention: this.getFraudPreventionStats(),
+        throughput: this.getThroughputStats(),
+        orderProcessingLatency: this.getOrderProcessingLatencyStats(),
       },
     };
   }
@@ -281,6 +415,8 @@ class ResultsCollector {
       auditTrailCompleteness: [],
       concurrentTests: [],
       transparencyMetrics: [],
+      throughput: [],
+      orderProcessingLatency: [],
     };
     this.saveToFile();
   }
