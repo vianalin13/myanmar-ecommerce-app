@@ -10,6 +10,7 @@
  * - getPublicProducts API response time
  * - getUserOrders API response time
  * - getChatMessages API response time
+ * - getOrderLogs API response time
  */
 
 const request = require("supertest");
@@ -25,8 +26,10 @@ const resultsCollector = require("../resultsCollector");
 describe("API Performance Tests", () => {
   let buyerUid;
   let sellerUid;
+  let adminUid;
   let buyerToken;
   let sellerToken;
+  let adminToken;
   let productId;
   let orderId;
   let chatId;
@@ -38,9 +41,11 @@ describe("API Performance Tests", () => {
     const timestamp = Date.now();
     buyerUid = `PERF_BUYER_${timestamp}`;
     sellerUid = `PERF_SELLER_${timestamp}`;
+    adminUid = `PERF_ADMIN_${timestamp}`;
 
     buyerToken = await createAuthUserAndGetToken(buyerUid, "buyer", "unverified");
     sellerToken = await createAuthUserAndGetToken(sellerUid, "seller", "verified");
+    adminToken = await createAuthUserAndGetToken(adminUid, "admin", "unverified");
 
     productId = await createTestProduct(sellerToken, {
       name: "Performance Test Product",
@@ -55,6 +60,7 @@ describe("API Performance Tests", () => {
     await cleanupTestData({
       buyerUid,
       sellerUid,
+      adminUid,
       productIds,
       orderIds,
       chatIds,
@@ -411,6 +417,75 @@ describe("API Performance Tests", () => {
 
     const avgTime = timings.reduce((a, b) => a + b, 0) / timings.length;
     console.log(`getChatMessages: Average ${avgTime.toFixed(2)}ms over ${iterations} iterations`);
+  }, 120000);
+
+  test("Measure getOrderLogs API response time", async () => {
+    chatId = await createTestChat(buyerUid, sellerUid, productId);
+    chatIds.push(chatId);
+
+    try {
+      orderId = await createTestOrder({
+        buyerToken: buyerToken,
+        sellerId: sellerUid,
+        products: [{ productId: productId, quantity: 1 }],
+        chatId: chatId,
+        paymentMethod: "KBZPay",
+      });
+      orderIds.push(orderId);
+    } catch (error) {
+      console.error("Failed to create order for getOrderLogs test:", error.message);
+      throw error;
+    }
+
+    // Generate activity to create logs (similar to getChatMessages test pattern)
+    // 1. Confirm payment
+    await request(BASE_URL)
+      .post("/simulatePayment")
+      .set("Authorization", `Bearer ${buyerToken}`)
+      .send({
+        orderId: orderId,
+        transactionId: `TXN_LOG_PERF_${Date.now()}`,
+      });
+
+    // 2. Seller confirms order
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({
+        orderId: orderId,
+        status: "confirmed",
+      });
+
+    // 3. Seller ships order
+    await request(BASE_URL)
+      .patch("/updateOrderStatus")
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({
+        orderId: orderId,
+        status: "shipped",
+        trackingNumber: "TRACK_LOG_PERF",
+      });
+
+    const iterations = 10;
+    const timings = [];
+
+    for (let i = 0; i < iterations; i++) {
+      const result = await measureTime(async () => {
+        const res = await request(BASE_URL)
+          .get("/getOrderLogs")
+          .set("Authorization", `Bearer ${adminToken}`)
+          .query({ orderId: orderId });
+        return res;
+      }, "getOrderLogs");
+
+      if (result.result && result.result.statusCode === 200) {
+        timings.push(result.duration);
+        resultsCollector.recordApiTiming("getOrderLogs", result.duration, true, "performance");
+      }
+    }
+
+    const avgTime = timings.reduce((a, b) => a + b, 0) / timings.length;
+    console.log(`getOrderLogs: Average ${avgTime.toFixed(2)}ms over ${iterations} iterations`);
   }, 120000);
 });
 
